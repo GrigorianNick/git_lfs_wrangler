@@ -15,10 +15,6 @@ fn get_gui(locks: Vec<LfsLock>) -> AppCreator {
 
 fn main() {
     //env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
-
-
-    println!("Branch:{}", git_lfs_wrangler::lock::get_branch());
-
     let locks = git_lfs_wrangler::lock::get_locks();
     let mut opts = eframe::NativeOptions::default();
     opts.follow_system_theme = false;

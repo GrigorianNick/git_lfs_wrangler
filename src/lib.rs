@@ -1,6 +1,7 @@
 pub mod lock;
 pub mod gui;
 pub mod fileexplorer;
+pub mod git;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

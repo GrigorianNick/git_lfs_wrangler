@@ -2,6 +2,7 @@ use core::fmt;
 use std::{default, iter, process::Command, str::FromStr};
 use regex::Regex;
 use std::collections::HashMap;
+use crate::git;
 
 pub struct LfsLock {
     pub file: String,
@@ -66,7 +67,7 @@ impl LfsLock {
         for l in locks {
             let sanitized_l = Self::normalize_path(&l.file);
             if sanitized_l == sanitized_p {
-                let new_file = [l.id.to_string(), get_branch()].join("___");
+                let new_file = [l.id.to_string(), git::get_branch()].join("___");
                 Self::lock_file(&new_file);
                 break;
             }
@@ -126,18 +127,4 @@ pub fn get_locks() -> Vec<LfsLock> {
         println!("Real lock:{}", l);
     }
     real_locks
-}
-
-pub fn get_branch() -> String {
-    let out = Command::new("cmd").args(["/C", "git branch --show-current"]).output();
-    match out {
-        Err(_) => "".to_string(),
-        Ok(output) => {
-            let mut s = String::from_utf8_lossy(&output.stdout).to_string();
-            if s.ends_with('\n') {
-                s.pop();
-            }
-            s
-        }
-    }
 }

@@ -1,6 +1,5 @@
-use eframe::{egui, AppCreator};
+use eframe::egui;
 use egui::Separator;
-use egui::Ui;
 
 use crate::fileexplorer;
 use crate::lock::{self, LfsLock};
@@ -12,38 +11,45 @@ struct LfsLockModel {
 
 #[derive(Default)]
 pub struct WranglerGui {
-    pub locks: Vec<LfsLockModel>,
+    locks: Vec<LfsLockModel>,
     explorer: fileexplorer::FileExplorer,
 }
 
 impl WranglerGui {
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        let mut r = Self::default();
-        r
+        Self::default()
     }
 
-    fn render_lock_headers(ui: &mut egui::Ui) {
+    fn render_lock_headers(&mut self, ui: &mut egui::Ui) {
         ui.label("");
-        ui.label("Filepath");
+        if ui.label("Filepath").clicked() {
+            self.locks.sort_by(|l1, l2| l1.lock.file.cmp(&l2.lock.file));
+        }
         ui.add(Separator::default().vertical());
-        ui.label("Owner");
+        if ui.label("Owner").clicked() {
+            self.locks.sort_by(|l1, l2| l1.lock.owner.cmp(&l2.lock.owner));
+        }
         ui.add(Separator::default().vertical());
-        ui.label("Lock ID");
+        if ui.label("Lock ID").clicked() {
+            self.locks.sort_by(|l1, l2| l1.lock.id.cmp(&l2.lock.id));
+        }
         ui.add(Separator::default().vertical());
-        ui.label("Associated branch");
+        if ui.label("Associated branch").clicked() {
+            self.locks.sort_by(|l1, l2| l1.lock.branch.cmp(&l2.lock.branch));
+        }
     }
 
     fn render_lock(lock: &mut LfsLockModel, ui: &mut egui::Ui) {
         ui.checkbox(&mut lock.selected, "");
-        ui.label(&lock.lock.file);
+        ui.monospace(&lock.lock.file);
         ui.add(Separator::default().vertical());
-        ui.label(&lock.lock.owner);
+        ui.monospace(&lock.lock.owner);
         ui.add(Separator::default().vertical());
-        ui.label(&lock.lock.id.to_string());
+        ui.monospace(&lock.lock.id.to_string());
         ui.add(Separator::default().vertical());
         match &lock.lock.branch {
             None => ui.label("No associate branch"),
-            Some(name) => ui.label(name),
+            Some(name) => ui.monospace(name),
         };
     }
 
@@ -81,7 +87,7 @@ impl eframe::App for WranglerGui {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("lfs lock view").show(ui, |ui| {
-                    WranglerGui::render_lock_headers(ui);
+                    self.render_lock_headers(ui);
                     ui.end_row();
                     for lock in &mut self.locks {
                         WranglerGui::render_lock(lock, ui);

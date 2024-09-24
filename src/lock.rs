@@ -1,5 +1,7 @@
 use core::fmt;
-use std::process::Command;
+use std::{default, iter, process::Command, str::FromStr};
+use regex::Regex;
+use std::collections::HashMap;
 
 pub struct LfsLock {
     pub file: String,
@@ -18,7 +20,7 @@ impl LfsLock {
     }
 
     pub fn new(file: String, owner: String, id: String, branch: Option<String>) -> Self {
-        id.strip_prefix("ID:");
+        let _ = id.strip_prefix("ID:");
         let id_num = match id.trim_start_matches("ID:").parse::<u32>() {
             Ok(val) => val,
             Err(_) => 0,
@@ -34,11 +36,41 @@ impl LfsLock {
     pub fn unlock(&self) {
         let unlock = ["git lfs unlock -i", &self.id.to_string()].join(" ");
         let _ = Command::new("cmd").args(["/C", &unlock]).output();
+        match &self.branch {
+            None => (),
+            Some(branch) => {
+                let tag_name = [self.id.to_string(), branch.to_string()].join("___");
+                let unlock_tag = ["git lfs unlock", &tag_name].join(" ");
+                let _ = Command::new("cmd").args(["/C", &unlock_tag]).output();
+            }
+        }
     }
 
-    pub fn lock_file(p: String) {
-        let lock = ["git lfs lock", &p].join(" ");
+    pub fn lock_file(p: &String) {
+        let lock = ["git lfs lock", p].join(" ");
         let _ = Command::new("cmd").args(["/C", &lock]).output();
+    }
+
+    fn normalize_path(p: &String) -> String {
+        let mut s = p.replace("\\", "/");
+        match s.strip_prefix("./") {
+            None => s,
+            Some(stripped) => stripped.to_string(),
+        }
+    }
+
+    pub fn lock_file_branch(p: String) {
+        let sanitized_p = Self::normalize_path(&p);
+        Self::lock_file(&sanitized_p);
+        let locks = get_locks();
+        for l in locks {
+            let sanitized_l = Self::normalize_path(&l.file);
+            if sanitized_l == sanitized_p {
+                let new_file = [l.id.to_string(), get_branch()].join("___");
+                Self::lock_file(&new_file);
+                break;
+            }
+        }
     }
 }
 
@@ -56,12 +88,56 @@ pub fn get_locks() -> Vec<LfsLock> {
     if !out.status.success() {
         return vec![];
     }
-    println!("out: {}", String::from_utf8_lossy(&out.stdout));
     let out = String::from_utf8_lossy(&out.stdout).to_string();
     let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
-    let locks = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
-    for l in &locks {
-        println!("{}", l);
+    let locks: Vec<LfsLock> = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
+    let re = Regex::new(r"[0-9]+___.*").unwrap();
+
+    let mut tag_map = HashMap::<u32, String>::new();
+    for lock in &locks {
+        if re.is_match(&lock.file) {
+            match lock.file.split_once("___") {
+                None => (),
+                Some((id, branch)) => {
+                    tag_map.insert(id.to_string().parse::<u32>().expect("Failed to parse int"), branch.to_string());
+                }
+            }
+        }
     }
-    locks
+
+    let real_locks = locks.into_iter().filter_map(|mut lock| {
+        match tag_map.get(&lock.id) {
+            None => {
+                if re.is_match(&lock.file) {
+                    None
+                } else {
+                    Some(lock)
+                }
+            },
+            Some(branch) => {
+                lock.branch = Some(branch.clone());
+                Some(lock)
+            }
+        }
+    }).collect();
+
+    //let _real_locks:Vec<LfsLock> = locks.into_iter().filter(|lock| _branch_tags.contains(&lock.id)).map(|mut lock| {lock.branch = Some("Test".to_string()); lock}).collect();
+    for l in &real_locks {
+        println!("Real lock:{}", l);
+    }
+    real_locks
+}
+
+pub fn get_branch() -> String {
+    let out = Command::new("cmd").args(["/C", "git branch --show-current"]).output();
+    match out {
+        Err(_) => "".to_string(),
+        Ok(output) => {
+            let mut s = String::from_utf8_lossy(&output.stdout).to_string();
+            if s.ends_with('\n') {
+                s.pop();
+            }
+            s
+        }
+    }
 }

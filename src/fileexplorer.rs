@@ -1,6 +1,5 @@
-use std::{fs, io};
-use std::fs::{DirEntry, File};
-use std::path::Path;
+use std::fs;
+use std::fs::DirEntry;
 
 use crate::lock;
 
@@ -52,16 +51,16 @@ impl FileExplorer {
         let name = os_name.to_string_lossy();
         if f.path().is_dir() {
             ui.label("D");
-            if ui.add(egui::Label::new(name.to_owned())).clicked() {
+            if ui.monospace(name.to_owned()).clicked() {
                 self.cwd = f.path();
             }
         } else if self.locked_files.contains(&f.path()) {
             ui.label("L");
-            ui.label(name.to_owned());
+            ui.monospace(name.to_owned());
         }
         else {
             ui.label(" ");
-            if ui.add(egui::Label::new(name)).clicked() {
+            if ui.monospace(name).clicked() {
                 self.selected_files.push(f.path());
             }
         }
@@ -101,7 +100,7 @@ impl FileExplorer {
                 let mut paths_to_remove: Vec<std::path::PathBuf> = vec![];
                 for file in &self.selected_files {
                     let p = file.to_str().unwrap();
-                    if ui.label(p).clicked() {
+                    if ui.monospace(p).clicked() {
                         paths_to_remove.push(file.to_path_buf());
                     }
                     ui.end_row();
@@ -114,7 +113,7 @@ impl FileExplorer {
         ui.separator();
         if ui.button("Lock files").clicked() {
             for file in &self.selected_files {
-                lock::LfsLock::lock_file(file.to_string_lossy().to_string());
+                lock::LfsLock::lock_file_branch(file.to_string_lossy().to_string());
             }
             self.selected_files.clear();
             should_update_locks = true;

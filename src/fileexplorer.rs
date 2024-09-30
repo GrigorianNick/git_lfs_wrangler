@@ -1,7 +1,8 @@
 use std::fs;
 use std::fs::DirEntry;
+use crate::lock::tag::tag::Tag;
 
-use crate::lock;
+use crate::lock::{self, tag};
 
 pub struct FileExplorer {
     selected_files: Vec<std::path::PathBuf>,
@@ -113,7 +114,15 @@ impl FileExplorer {
         ui.separator();
         if ui.button("Lock files").clicked() {
             for file in &self.selected_files {
-                lock::LfsLock::lock_file_branch(file.to_string_lossy().to_string());
+                match lock::LfsLock::lock_file(&file.to_string_lossy().to_string()) {
+                    None => (),
+                    Some(mut lock) => {
+                        let branch_tag = tag::branchtag::for_lock(&lock);
+                        branch_tag.tag(&mut lock);
+                        let dir_tag = tag::dirtag::for_lock(&lock);
+                        dir_tag.tag(&mut lock);
+                    }
+                };
             }
             self.selected_files.clear();
             should_update_locks = true;

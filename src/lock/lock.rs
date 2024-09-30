@@ -3,12 +3,18 @@ use std::{default, iter, process::Command, str::FromStr};
 use regex::Regex;
 use std::collections::HashMap;
 use crate::git;
+use crate::lock::tag::tag::Tag;
+
+use super::tag;
 
 pub struct LfsLock {
     pub file: String,
     pub owner: String,
     pub id: u32,
-    pub branch: Option<String>
+    pub branch: Option<String>,
+    pub dir: Option<String>,
+    pub queue: Vec<u32>,
+    pub tags: Vec<Box<dyn Tag>>,
 }
 
 impl LfsLock {
@@ -31,6 +37,9 @@ impl LfsLock {
             owner: owner,
             id: id_num,
             branch: branch,
+            dir: None,
+            queue: vec![],
+            tags: vec![],
         }
     }
 
@@ -47,9 +56,13 @@ impl LfsLock {
         }
     }
 
-    pub fn lock_file(p: &String) {
+    pub fn lock_file(p: &String) -> Option<LfsLock>{
         let lock = ["git lfs lock", p].join(" ");
         let _ = Command::new("cmd").args(["/C", &lock]).output();
+        let locks = get_locks().into_iter().filter(|l| {
+            println!("l.file: {} :--: {}", l.file, p);
+         Self::normalize_path(&l.file) == Self::normalize_path(p)});
+        locks.last()
     }
 
     fn normalize_path(p: &String) -> String {
@@ -60,26 +73,23 @@ impl LfsLock {
         }
     }
 
-    pub fn lock_file_branch(p: String) {
-        let sanitized_p = Self::normalize_path(&p);
-        Self::lock_file(&sanitized_p);
-        let locks = get_locks();
-        for l in locks {
-            let sanitized_l = Self::normalize_path(&l.file);
-            if sanitized_l == sanitized_p {
-                let new_file = [l.id.to_string(), git::get_branch()].join("___");
-                Self::lock_file(&new_file);
-                break;
-            }
-        }
+    pub fn enqueue(&self) {
+        let queue_prefix = match self.queue.last()
+        {
+            None =>  ["Q", &self.id.to_string()].join(""),
+            Some(id) => ["Q", &id.to_string()].join(""),
+        };
+        //let queue_prefix = ["Q", &self.id.to_string()].join("");
+        let queue_tag = [queue_prefix.to_string(), self.file.to_string()].join("___");
+        LfsLock::lock_file(&queue_tag);
     }
 }
 
 impl fmt::Display for LfsLock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.branch {
-            Some(branch_name) => write!(f, "file: {}; owner: {}; id: {}; branch: {}", self.file, self.owner, self.id, branch_name),
-            None => write!(f, "file: {}; owner: {}; id: {}; branch: {}", self.file, self.owner, self.id, "None detected"),
+            Some(branch_name) => write!(f, "file: {}; owner: {}; id: {}; branch: {}; queue: {:?}", self.file, self.owner, self.id, branch_name, self.queue),
+            None => write!(f, "file: {}; owner: {}; id: {}; branch: {}; queue: {:?}", self.file, self.owner, self.id, "None detected", self.queue),
         }
     }
 }
@@ -92,7 +102,32 @@ pub fn get_locks() -> Vec<LfsLock> {
     let out = String::from_utf8_lossy(&out.stdout).to_string();
     let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
     let locks: Vec<LfsLock> = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
-    let re = Regex::new(r"[0-9]+___.*").unwrap();
+
+
+    let mut lock_map = HashMap::<u32, LfsLock>::new();
+    let mut tags = Vec::<Box<dyn tag::Tag>>::new();
+    for lock in locks {
+        match tag::get_tag(&lock) {
+            None => {
+                lock_map.insert(lock.id, lock);
+            }
+            Some(tag) => {
+                tags.push(tag);
+            },
+        }
+    }
+    for tag in tags {
+        match lock_map.get_mut(&tag.get_target_id()) {
+            None => (),
+            Some(lock) => {
+                tag.apply(lock);
+            },
+        }
+    }
+    lock_map.into_iter().map(|(_id, lock)| lock).collect()
+    //vec![]
+
+    /*let re = Regex::new(r"^[0-9]+___.*").unwrap();
 
     let mut tag_map = HashMap::<u32, String>::new();
     for lock in &locks {
@@ -106,25 +141,46 @@ pub fn get_locks() -> Vec<LfsLock> {
         }
     }
 
-    let real_locks = locks.into_iter().filter_map(|mut lock| {
-        match tag_map.get(&lock.id) {
+    // lock.id -> next in line
+    let mut queue_map = HashMap::<u32, u32>::new();
+    let queue_re = Regex::new(r"Q(?<id>[0-9]+)___.*").unwrap();
+    for lock in &locks {
+        match queue_re.captures(&lock.file) {
             None => {
-                if re.is_match(&lock.file) {
-                    None
-                } else {
-                    Some(lock)
-                }
+                println!("Failed to find in: {}", lock.file);
             },
-            Some(branch) => {
-                lock.branch = Some(branch.clone());
-                Some(lock)
+            Some(c) => {
+                println!("inserting: {}", &c["id"]);
+                queue_map.insert(c["id"].parse::<u32>().expect("Failed to parse int"), lock.id);
             }
         }
+    }
+
+    let real_locks = locks.into_iter().filter_map(|mut lock| {
+        if lock.file.contains("___") {
+            return None
+        }
+        match tag_map.get(&lock.id) {
+            None => (),
+            Some(branch) => {
+                lock.branch = Some(branch.clone());
+            }
+        }
+        let mut queue_id = lock.id;
+        let mut queue = vec![];
+        while let Some(next_id) = queue_map.get(&queue_id) {
+            queue.push(*next_id);
+            queue_id = *next_id;
+        }
+        println!("queue: {:?}", queue);
+        println!("map: {:?}", queue_map);
+        lock.queue = queue;
+        Some(lock)
     }).collect();
 
     //let _real_locks:Vec<LfsLock> = locks.into_iter().filter(|lock| _branch_tags.contains(&lock.id)).map(|mut lock| {lock.branch = Some("Test".to_string()); lock}).collect();
     for l in &real_locks {
         println!("Real lock:{}", l);
     }
-    real_locks
+    real_locks*/
 }

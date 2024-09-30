@@ -2,7 +2,8 @@ use eframe::egui;
 use egui::Separator;
 
 use crate::fileexplorer;
-use crate::lock::{self, LfsLock};
+use crate::lock::tag::Tag;
+use crate::lock::{self, tag, LfsLock};
 
 struct LfsLockModel {
     pub lock: lock::LfsLock,
@@ -37,6 +38,12 @@ impl WranglerGui {
         if ui.label("Associated branch").clicked() {
             self.locks.sort_by(|l1, l2| l1.lock.branch.cmp(&l2.lock.branch));
         }
+        ui.add(Separator::default().vertical());
+        if ui.label("Associated dir").clicked() {
+            self.locks.sort_by(|l1, l2| l1.lock.dir.cmp(&l2.lock.dir));
+        }
+        ui.add(Separator::default().vertical());
+        ui.label("Queue");
     }
 
     fn render_lock(lock: &mut LfsLockModel, ui: &mut egui::Ui) {
@@ -51,6 +58,17 @@ impl WranglerGui {
             None => ui.label("No associate branch"),
             Some(name) => ui.monospace(name),
         };
+        ui.add(Separator::default().vertical());
+        match &lock.lock.dir {
+            None => ui.label("No associated directory"),
+            Some(dir) => ui.monospace(dir),
+        };
+        ui.add(Separator::default().vertical());
+        if lock.lock.queue.len() == 0 {
+            ui.label("No queue detected");
+        } else {
+            ui.monospace(format!("{:?}", lock.lock.queue));
+        }
     }
 
     pub fn add_locks(&mut self, locks: Vec<LfsLock>) {
@@ -86,6 +104,7 @@ impl eframe::App for WranglerGui {
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_height_range(100.0..=500.0);
                 egui::Grid::new("lfs lock view").show(ui, |ui| {
                     self.render_lock_headers(ui);
                     ui.end_row();
@@ -98,6 +117,15 @@ impl eframe::App for WranglerGui {
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new("Release locks")).clicked() {
                     self.release_locks();
+                    self.refresh_locks();
+                }
+                if ui.button("Enqueue for locks").clicked() {
+                    for lock in &mut self.locks {
+                        if lock.selected {
+                            let queue_tag = tag::queuetag::for_lock(&lock.lock);
+                            queue_tag.tag(&mut lock.lock);
+                        }
+                    }
                     self.refresh_locks();
                 }
             })

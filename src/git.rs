@@ -1,7 +1,10 @@
 use std::process::Command;
+use std::os::windows::process::CommandExt;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub fn get_user() -> String {
-    let out = Command::new("cmd").args(["/C", "git config --get user.name"]).output();
+    let out = Command::new("cmd").args(["/C", "git config --get user.name"]).creation_flags(CREATE_NO_WINDOW).output();
     match out {
         Err(_) => "".to_string(),
         Ok(output) => {
@@ -15,7 +18,7 @@ pub fn get_user() -> String {
 }
 
 pub fn get_branch() -> String {
-    let out = Command::new("cmd").args(["/C", "git branch --show-current"]).output();
+    let out = Command::new("cmd").args(["/C", "git branch --show-current"]).creation_flags(CREATE_NO_WINDOW).output();
     match out {
         Err(_) => "".to_string(),
         Ok(output) => {

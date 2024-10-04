@@ -1,10 +1,12 @@
 use core::fmt;
 use std::process::Command;
+use std::os::windows::process::CommandExt;
 use std::collections::HashMap;
 use crate::lock::tag::tag::Tag;
 
 use super::tag;
 
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn normalize_path(p: &String) -> String {
     let s = p.replace("\\", "/");
@@ -52,13 +54,13 @@ impl LfsLock {
 
     pub fn unlock(&self) {
         let unlock = ["git lfs unlock -i", &self.id.to_string()].join(" ");
-        let _ = Command::new("cmd").args(["/C", &unlock]).output();
+        let _ = Command::new("cmd").args(["/C", &unlock]).creation_flags(CREATE_NO_WINDOW).output();
         match &self.branch {
             None => (),
             Some(branch) => {
                 let tag_name = [self.id.to_string(), branch.to_string()].join("___");
                 let unlock_tag = ["git lfs unlock", &tag_name].join(" ");
-                let _ = Command::new("cmd").args(["/C", &unlock_tag]).output();
+                let _ = Command::new("cmd").args(["/C", &unlock_tag]).creation_flags(CREATE_NO_WINDOW).output();
             }
         }
     }
@@ -66,7 +68,7 @@ impl LfsLock {
     pub fn unlock_file(p: &String) -> bool {
         let lock = ["git lfs unlock", p].join(" ");
         println!("Running command: {}", lock);
-        let cmd = Command::new("cmd").args(["/C", &lock]).output();
+        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
             Err(_) => false,
             Ok(e) => e.status.success(),
@@ -107,7 +109,7 @@ impl LockStore {
 
     // Fetches raw locks
     pub fn fetch_raw_locks(&self) -> Vec<LfsLock> {
-        let out = Command::new("cmd").args(["/C", "git lfs locks"]).output().expect("Failed to execute process");
+        let out = Command::new("cmd").args(["/C", "git lfs locks"]).creation_flags(CREATE_NO_WINDOW).output().expect("Failed to execute process");
         let out = String::from_utf8_lossy(&out.stdout).to_string();
         let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
         let locks: Vec<LfsLock> = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
@@ -161,7 +163,7 @@ impl LockStore {
 
     pub fn lock_file(&self, p: &String) -> bool {
         let lock = ["git lfs lock", p].join(" ");
-        let cmd = Command::new("cmd").args(["/C", &lock]).output();
+        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
             Err(_) => false,
             Ok(r) => {

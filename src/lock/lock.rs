@@ -1,11 +1,18 @@
 use core::fmt;
-use std::{default, iter, process::Command, str::FromStr};
-use regex::Regex;
+use std::process::Command;
 use std::collections::HashMap;
-use crate::git;
 use crate::lock::tag::tag::Tag;
 
 use super::tag;
+
+
+fn normalize_path(p: &String) -> String {
+    let s = p.replace("\\", "/");
+    match s.strip_prefix("./") {
+        None => s,
+        Some(stripped) => stripped.to_string(),
+    }
+}
 
 pub struct LfsLock {
     pub file: String,
@@ -13,7 +20,7 @@ pub struct LfsLock {
     pub id: u32,
     pub branch: Option<String>,
     pub dir: Option<String>,
-    pub queue: Vec<u32>,
+    pub queue: Vec<String>,
     pub tags: Vec<Box<dyn Tag>>,
 }
 
@@ -56,32 +63,14 @@ impl LfsLock {
         }
     }
 
-    pub fn lock_file(p: &String) -> Option<LfsLock>{
-        let lock = ["git lfs lock", p].join(" ");
-        let _ = Command::new("cmd").args(["/C", &lock]).output();
-        let locks = get_locks().into_iter().filter(|l| {
-            println!("l.file: {} :--: {}", l.file, p);
-         Self::normalize_path(&l.file) == Self::normalize_path(p)});
-        locks.last()
-    }
-
-    fn normalize_path(p: &String) -> String {
-        let mut s = p.replace("\\", "/");
-        match s.strip_prefix("./") {
-            None => s,
-            Some(stripped) => stripped.to_string(),
+    pub fn unlock_file(p: &String) -> bool {
+        let lock = ["git lfs unlock", p].join(" ");
+        println!("Running command: {}", lock);
+        let cmd = Command::new("cmd").args(["/C", &lock]).output();
+        match cmd {
+            Err(_) => false,
+            Ok(e) => e.status.success(),
         }
-    }
-
-    pub fn enqueue(&self) {
-        let queue_prefix = match self.queue.last()
-        {
-            None =>  ["Q", &self.id.to_string()].join(""),
-            Some(id) => ["Q", &id.to_string()].join(""),
-        };
-        //let queue_prefix = ["Q", &self.id.to_string()].join("");
-        let queue_tag = [queue_prefix.to_string(), self.file.to_string()].join("___");
-        LfsLock::lock_file(&queue_tag);
     }
 }
 
@@ -94,93 +83,131 @@ impl fmt::Display for LfsLock {
     }
 }
 
-pub fn get_locks() -> Vec<LfsLock> {
-    let out = Command::new("cmd").args(["/C", "git lfs locks"]).output().expect("Failed to execute process");
-    if !out.status.success() {
-        return vec![];
-    }
-    let out = String::from_utf8_lossy(&out.stdout).to_string();
-    let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
-    let locks: Vec<LfsLock> = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
+pub struct LockStore {
+    locks: Vec<LfsLock>,
+    orphan_tags: Vec<Box<dyn Tag>>,
+}
 
-
-    let mut lock_map = HashMap::<u32, LfsLock>::new();
-    let mut tags = Vec::<Box<dyn tag::Tag>>::new();
-    for lock in locks {
-        match tag::get_tag(&lock) {
-            None => {
-                lock_map.insert(lock.id, lock);
-            }
-            Some(tag) => {
-                tags.push(tag);
-            },
+impl Default for LockStore {
+    fn default() -> Self {
+        LockStore {
+            locks: vec![],
+            orphan_tags: vec![],
         }
     }
-    for tag in tags {
-        match lock_map.get_mut(&tag.get_target_id()) {
-            None => (),
-            Some(lock) => {
-                tag.apply(lock);
-            },
-        }
+}
+
+impl LockStore {
+
+    pub fn new() -> Self {
+        let mut store = LockStore::default();
+        store.update_locks();
+        store
     }
-    lock_map.into_iter().map(|(_id, lock)| lock).collect()
-    //vec![]
 
-    /*let re = Regex::new(r"^[0-9]+___.*").unwrap();
+    // Fetches raw locks
+    pub fn fetch_raw_locks(&self) -> Vec<LfsLock> {
+        let out = Command::new("cmd").args(["/C", "git lfs locks"]).output().expect("Failed to execute process");
+        let out = String::from_utf8_lossy(&out.stdout).to_string();
+        let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
+        let locks: Vec<LfsLock> = lines.iter().map(|&l| LfsLock::from_line(l.to_string()).unwrap()).collect();
+        locks
+    }
 
-    let mut tag_map = HashMap::<u32, String>::new();
-    for lock in &locks {
-        if re.is_match(&lock.file) {
-            match lock.file.split_once("___") {
-                None => (),
-                Some((id, branch)) => {
-                    tag_map.insert(id.to_string().parse::<u32>().expect("Failed to parse int"), branch.to_string());
+    pub fn update_locks(&mut self) {
+        let locks = self.fetch_raw_locks();
+
+        let mut lock_map = HashMap::<u32, LfsLock>::new();
+        let mut tags = Vec::<Box<dyn tag::Tag>>::new();
+        for lock in locks {
+            match tag::get_tag(&lock) {
+                None => {
+                    lock_map.insert(lock.id, lock);
                 }
+                Some(tag) => {
+                    tags.push(tag);
+                },
+            }
+        }
+        for tag in tags {
+            match lock_map.get_mut(&tag.get_target_id()) {
+                None => self.orphan_tags.push(tag),
+                Some(lock) => {
+                    tag.apply(lock);
+                },
+            }
+        }
+        let mut recurse = false;
+        self.locks = lock_map.into_values().collect();
+        for tag in &self.orphan_tags {
+            recurse = true;
+            tag.cleanup(self);
+        }
+        if recurse {
+            self.orphan_tags.clear();
+            self.update_locks();
+        }
+    }
+
+    // locks a file, then returns the newly created lock
+    pub fn lock_file_fetch(&self, p: &String) -> Option<LfsLock>{
+        if self.lock_file(p) {
+            let locks = self.fetch_raw_locks().into_iter().filter(|l| normalize_path(&l.file) == normalize_path(p));
+            locks.last()
+        } else {
+            None
+        }
+    }
+
+    pub fn lock_file(&self, p: &String) -> bool {
+        let lock = ["git lfs lock", p].join(" ");
+        let cmd = Command::new("cmd").args(["/C", &lock]).output();
+        match cmd {
+            Err(_) => false,
+            Ok(r) => {
+                println!("Lock exit code:{}", r.status.success());
+                r.status.success()
             }
         }
     }
 
-    // lock.id -> next in line
-    let mut queue_map = HashMap::<u32, u32>::new();
-    let queue_re = Regex::new(r"Q(?<id>[0-9]+)___.*").unwrap();
-    for lock in &locks {
-        match queue_re.captures(&lock.file) {
-            None => {
-                println!("Failed to find in: {}", lock.file);
-            },
-            Some(c) => {
-                println!("inserting: {}", &c["id"]);
-                queue_map.insert(c["id"].parse::<u32>().expect("Failed to parse int"), lock.id);
+    // lock a real file, not an arbitrary path
+    pub fn lock_real_file(&self, p: &String) -> bool {
+        match self.lock_file_fetch(p) {
+            None => false,
+            Some(lock) => {
+                let bt = tag::branchtag::for_lock(&lock);
+                let dt = tag::dirtag::for_lock(&lock);
+                bt.save(self);
+                dt.save(self);
+                true
             }
         }
     }
 
-    let real_locks = locks.into_iter().filter_map(|mut lock| {
-        if lock.file.contains("___") {
-            return None
-        }
-        match tag_map.get(&lock.id) {
-            None => (),
-            Some(branch) => {
-                lock.branch = Some(branch.clone());
+    pub fn unlock_id(&self, id: u32) {
+        for lock in &self.locks {
+            if lock.id == id {
+                println!("Unlocking file:id; {}:{}", &lock.file, id);
+                LfsLock::unlock_file(&lock.file);
             }
         }
-        let mut queue_id = lock.id;
-        let mut queue = vec![];
-        while let Some(next_id) = queue_map.get(&queue_id) {
-            queue.push(*next_id);
-            queue_id = *next_id;
-        }
-        println!("queue: {:?}", queue);
-        println!("map: {:?}", queue_map);
-        lock.queue = queue;
-        Some(lock)
-    }).collect();
-
-    //let _real_locks:Vec<LfsLock> = locks.into_iter().filter(|lock| _branch_tags.contains(&lock.id)).map(|mut lock| {lock.branch = Some("Test".to_string()); lock}).collect();
-    for l in &real_locks {
-        println!("Real lock:{}", l);
     }
-    real_locks*/
+
+    pub fn tag(&mut self, tag: Box<dyn tag::Tag>) {
+        for lock in &mut self.locks {
+            if lock.id == tag.get_target_id() {
+                tag.apply(lock);
+            }
+        }
+        tag.save(self);
+    }
+
+    pub fn get_lock_id(&self, id: u32) -> Option<&LfsLock> {
+        self.locks.iter().filter(|lock| lock.id == id).last()
+    }
+
+    pub fn get_locks(&self) -> Vec<&LfsLock> {
+        self.locks.iter().collect()
+    }
 }

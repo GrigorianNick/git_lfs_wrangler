@@ -1,11 +1,13 @@
-use crate::lock::{lock, LfsLock};
+use crate::{git, lock::{lock, LfsLock}};
 use super::Tag;
+use crate::lock::LockStore;
 
 use regex::Regex;
 
 pub struct QueueTag {
     target_id: u32,
     target_file: String,
+    queue_owner: String,
 }
 
 pub fn for_lock(lock: &LfsLock) -> Box<QueueTag> {
@@ -13,6 +15,7 @@ pub fn for_lock(lock: &LfsLock) -> Box<QueueTag> {
         QueueTag {
             target_id: lock.id,
             target_file: lock.file.clone(),
+            queue_owner: git::get_user(),
         }
     )
 }
@@ -27,6 +30,7 @@ impl QueueTag {
                     (Some(id), Some(f)) => Some(Box::new(QueueTag{
                         target_id: id.as_str().parse().expect("failed to parse int"),
                         target_file: f.as_str().to_string(),
+                        queue_owner: lock.owner.clone(),
                     })),
                     _ => None,
                 }
@@ -36,16 +40,41 @@ impl QueueTag {
 }
 
 impl Tag for QueueTag {
-    fn save(&self) {
+    fn save(&self, store: &LockStore) {
         let lock_path = ["Q", self.target_id.to_string().as_str(), "___", self.target_file.as_str()].join("");
-        lock::LfsLock::lock_file(&lock_path);
+        store.lock_file(&lock_path);
     }
 
     fn apply(&self, lock: &mut LfsLock) {
-        lock.queue.push(self.target_id);
+        println!("Apply queue with owner: {}; target file: {}; target id: {}", self.queue_owner, lock.file, lock.id);
+        lock.queue.push(self.queue_owner.clone());
     }
 
     fn get_target_id(&self) -> u32 {
         self.target_id
+    }
+
+    fn cleanup(&self, store: &LockStore) {
+        println!("Cleaning up enqueue lock: {}", self.target_file);
+        let target_lock = store.get_lock_id(self.get_target_id());
+        match target_lock {
+            // target lock doesn't exist, grab it
+            None => {
+                println!("Grabbing lock for: {}", &self.target_file);
+                if store.lock_real_file(&self.target_file) {
+                    let lock_path = ["Q", self.target_id.to_string().as_str(), "___", self.target_file.as_str()].join("");
+                    lock::LfsLock::unlock_file(&lock_path);
+                }
+            }
+            // target exists, if we own it nuke ourselves
+            Some(l) => {
+                println!("Queue target exists for: {}", &self.target_file);
+                if l.owner == git::get_user() {
+                    let lock_path = ["Q", self.target_id.to_string().as_str(), "___", self.target_file.as_str()].join("");
+                    println!("We own it, nuking self: {}", lock_path);
+                    lock::LfsLock::unlock_file(&lock_path);
+                }
+            }
+        }
     }
 }

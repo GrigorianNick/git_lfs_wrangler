@@ -1,6 +1,5 @@
 use std::fs;
 use std::fs::DirEntry;
-use crate::lock::tag::tag::Tag;
 
 use crate::lock::{self, tag};
 
@@ -8,6 +7,7 @@ pub struct FileExplorer {
     selected_files: Vec<std::path::PathBuf>,
     cwd: std::path::PathBuf,
     locked_files: Vec<std::path::PathBuf>,
+    lock_store: lock::LockStore,
 }
 
 impl Default for FileExplorer {
@@ -19,23 +19,19 @@ impl Default for FileExplorer {
 impl FileExplorer {
 
     pub fn new(path: String) -> Self {
-        let locks = lock::get_locks();
-        let mut lock_paths = vec![];
-        for lock in locks {
-            let fixed_path = [".", &lock.file].join("/");
-            lock_paths.push(std::path::Path::new(&fixed_path).to_path_buf());
-        }
         let mut fs = FileExplorer {
             selected_files: vec![],
             cwd: std::path::Path::new(&path).to_path_buf(),
             locked_files: vec![],
+            lock_store: lock::LockStore::new(),
         };
         fs.refresh_locks();
         fs
     }
 
     pub fn refresh_locks(&mut self) {
-        let locks = lock::get_locks();
+        self.lock_store.update_locks();
+        let locks = self.lock_store.get_locks();
         let mut lock_paths = vec![];
         for lock in locks {
             let fixed_path = [".", &lock.file].join("/");
@@ -114,15 +110,20 @@ impl FileExplorer {
         ui.separator();
         if ui.button("Lock files").clicked() {
             for file in &self.selected_files {
-                match lock::LfsLock::lock_file(&file.to_string_lossy().to_string()) {
-                    None => (),
-                    Some(mut lock) => {
-                        let branch_tag = tag::branchtag::for_lock(&lock);
-                        branch_tag.tag(&mut lock);
-                        let dir_tag = tag::dirtag::for_lock(&lock);
-                        dir_tag.tag(&mut lock);
-                    }
+                self.lock_store.lock_real_file(&file.to_string_lossy().to_string());
+                /*let (branch_tag, dir_tag) = match self.lock_store.lock_file_fetch(&file.to_string_lossy().to_string()) {
+                    None => (None, None),
+                    Some(lock) => {
+                        (Some(tag::branchtag::for_lock(&lock)), Some(tag::dirtag::for_lock(&lock)))
+                    },
                 };
+                match (branch_tag, dir_tag) {
+                    (Some(bt), Some(dt)) => {
+                        self.lock_store.tag(bt);
+                        self.lock_store.tag(dt);
+                    }
+                    _ => (),
+                }*/
             }
             self.selected_files.clear();
             should_update_locks = true;

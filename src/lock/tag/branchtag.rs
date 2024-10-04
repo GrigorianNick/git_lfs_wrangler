@@ -1,4 +1,4 @@
-use crate::lock::LfsLock;
+use crate::lock::{lock, LfsLock, LockStore};
 use crate::lock::tag::Tag;
 
 use regex::Regex;
@@ -40,10 +40,10 @@ pub fn for_lock(lock: &LfsLock) -> Box<dyn Tag> {
 
 impl Tag for BranchTag {
 
-    fn save(&self) {
+    fn save(&self, store: &LockStore) {
         let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
         println!("Tagginb branch:{}", &lock);
-        crate::lock::LfsLock::lock_file(&lock);
+        store.lock_file(&lock);
     }
 
     fn apply(&self, lock: &mut LfsLock) {
@@ -52,5 +52,11 @@ impl Tag for BranchTag {
 
     fn get_target_id(&self) -> u32 {
         self.target_id
+    }
+
+    fn cleanup(&self, _store: &LockStore) {
+        println!("Cleaning up branchtag!");
+        let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
+        lock::LfsLock::unlock_file(&lock);
     }
 }

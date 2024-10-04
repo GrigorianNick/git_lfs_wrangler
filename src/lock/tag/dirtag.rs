@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::lock::{lock, LfsLock};
+use crate::lock::{lock, LfsLock, LockStore};
 use regex::Regex;
 use crate::lock::tag::Tag;
 
@@ -29,18 +29,6 @@ impl DirTag {
             }
         }
     }
-
-    // build a new tag targeting an LfsLock
-    fn new(lock: &LfsLock) -> Box<DirTag> {
-        let dt = DirTag {
-            target_id: lock.id,
-            dir: match std::env::current_dir() {
-                Err(_) => "".to_string(),
-                Ok(cwd) => cwd.to_string_lossy().to_string(),
-            },
-        };
-        Box::new(dt)
-    }
 }
 
 pub fn for_lock(lock: &LfsLock) -> Box<DirTag> {
@@ -57,12 +45,17 @@ impl Tag for DirTag {
         lock.dir = Some(self.dir.clone());
     }
 
-    fn save(&self) {
+    fn save(&self, store: &LockStore) {
         let lock_file = ["D", self.get_target_id().to_string().as_str(), "___", self.dir.as_str()].join("");
-        lock::LfsLock::lock_file(&lock_file);
+        store.lock_file(&lock_file);
     }
 
     fn get_target_id(&self) -> u32 {
         self.target_id
+    }
+
+    fn cleanup(&self, _store: &LockStore) {
+        let lock_file = ["D", self.get_target_id().to_string().as_str(), "___", self.dir.as_str()].join("");
+        lock::LfsLock::unlock_file(&lock_file);
     }
 }

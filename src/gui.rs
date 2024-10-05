@@ -15,6 +15,8 @@ pub struct WranglerGui {
     explorer: fileexplorer::FileExplorer,
     lock_store: lock::lock::LockStore,
     lock_sort_fn: Box<LockSortFunc>,
+    // Backing search texts
+    file_search: String,
 }
 
 impl Default for WranglerGui {
@@ -25,6 +27,7 @@ impl Default for WranglerGui {
             explorer: fileexplorer::FileExplorer::new(".".into()),
             lock_store: lock::lock::LockStore::new(),
             lock_sort_fn: Box::new(file_sort),
+            file_search: "".into(),
         }
     }
 }
@@ -53,6 +56,12 @@ impl WranglerGui {
     }
 
     fn render_lock_headers(&mut self, ui: &mut egui::Ui) {
+
+        ui.label("");
+        ui.add(egui::TextEdit::singleline(&mut self.file_search));
+        ui.add(egui::Separator::default().vertical());
+        ui.end_row();
+
         ui.label("");
         if ui.label("Filepath").clicked() {
             self.lock_sort_fn = Box::new(file_sort);
@@ -75,6 +84,7 @@ impl WranglerGui {
         }
         ui.add(Separator::default().vertical());
         ui.label("Queue");
+        ui.end_row();
     }
 
     fn render_lock(check: &mut bool, lock: &LfsLock, ui: &mut egui::Ui) {
@@ -106,10 +116,18 @@ impl WranglerGui {
     fn render_locks(&mut self, ui: &mut egui::Ui) {
         let mut locks = self.lock_store.get_locks().clone();
         locks.sort_by( |&l1, &l2| (self.lock_sort_fn)(l1, l2));
+        let file_re = match regex::Regex::new(&self.file_search) {
+            Err(_) => regex::Regex::new("").expect("Failed to compile empty regex somehow"),
+            Ok(r) => r,
+        };
         for lock in locks {
             match self.lock_selection.get_mut(&lock.id) {
                 None => (),
-                Some(b) => Self::render_lock(b, lock, ui),
+                Some(b) => {
+                    if file_re.is_match(&lock.file) {
+                        Self::render_lock(b, lock, ui)
+                    }
+                },
             }
             //Self::render_lock(self.lock_selection.get_mut(&lock.id).unwrap(), lock, ui);
         }
@@ -118,7 +136,6 @@ impl WranglerGui {
     pub fn release_locks(&self) {
         for (id, selected) in &self.lock_selection {
             if *selected {
-                println!("Trying unlock for id: {}", *id);
                 self.lock_store.unlock_id(*id);
             }
         }
@@ -147,7 +164,6 @@ impl eframe::App for WranglerGui {
                 ui.set_height_range(100.0..=500.0);
                 egui::Grid::new("lfs lock view").show(ui, |ui| {
                     self.render_lock_headers(ui);
-                    ui.end_row();
                     self.render_locks(ui);
                 });
             });
@@ -158,17 +174,13 @@ impl eframe::App for WranglerGui {
                 }
                 if ui.button("Enqueue for locks").clicked() {
                     for (id, sel) in &self.lock_selection {
-                        println!("id: {}, sel: {}", *id, *sel);
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
                                 Some(lock) => {
                                     let queue_tag = tag::queuetag::for_lock(lock);
-                                    println!("Tag target: {}, Lock id: {}", queue_tag.get_target_id(), lock.id);
                                     self.lock_store.tag(queue_tag);
                                 },
-                                None => {
-                                    println!("Failed to get lock for id: {}", *id);
-                                },
+                                None => (),
                             }
                         }
                     }

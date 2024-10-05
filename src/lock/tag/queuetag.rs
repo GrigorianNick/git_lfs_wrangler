@@ -46,7 +46,6 @@ impl Tag for QueueTag {
     }
 
     fn apply(&self, lock: &mut LfsLock) {
-        println!("Apply queue with owner: {}; target file: {}; target id: {}", self.queue_owner, lock.file, lock.id);
         lock.queue.push(self.queue_owner.clone());
     }
 
@@ -55,12 +54,10 @@ impl Tag for QueueTag {
     }
 
     fn cleanup(&self, store: &LockStore) {
-        println!("Cleaning up enqueue lock: {}", self.target_file);
         let target_lock = store.get_lock_id(self.get_target_id());
         match target_lock {
             // target lock doesn't exist, grab it
             None => {
-                println!("Grabbing lock for: {}", &self.target_file);
                 if store.lock_real_file(&self.target_file) {
                     let lock_path = ["Q", self.target_id.to_string().as_str(), "___", self.target_file.as_str()].join("");
                     lock::LfsLock::unlock_file(&lock_path);
@@ -68,10 +65,8 @@ impl Tag for QueueTag {
             }
             // target exists, if we own it nuke ourselves
             Some(l) => {
-                println!("Queue target exists for: {}", &self.target_file);
                 if l.owner == git::get_user() {
                     let lock_path = ["Q", self.target_id.to_string().as_str(), "___", self.target_file.as_str()].join("");
-                    println!("We own it, nuking self: {}", lock_path);
                     lock::LfsLock::unlock_file(&lock_path);
                 }
             }

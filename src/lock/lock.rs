@@ -67,7 +67,6 @@ impl LfsLock {
 
     pub fn unlock_file(p: &String) -> bool {
         let lock = ["git lfs unlock", p].join(" ");
-        println!("Running command: {}", lock);
         let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
             Err(_) => false,
@@ -166,10 +165,7 @@ impl LockStore {
         let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
             Err(_) => false,
-            Ok(r) => {
-                println!("Lock exit code:{}", r.status.success());
-                r.status.success()
-            }
+            Ok(r) => r.status.success()
         }
     }
 
@@ -190,7 +186,6 @@ impl LockStore {
     pub fn unlock_id(&self, id: u32) {
         for lock in &self.locks {
             if lock.id == id {
-                println!("Unlocking file:id; {}:{}", &lock.file, id);
                 LfsLock::unlock_file(&lock.file);
             }
         }

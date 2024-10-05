@@ -42,7 +42,6 @@ impl Tag for BranchTag {
 
     fn save(&self, store: &LockStore) {
         let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
-        println!("Tagginb branch:{}", &lock);
         store.lock_file(&lock);
     }
 
@@ -55,7 +54,6 @@ impl Tag for BranchTag {
     }
 
     fn cleanup(&self, _store: &LockStore) {
-        println!("Cleaning up branchtag!");
         let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
         lock::LfsLock::unlock_file(&lock);
     }

@@ -40,9 +40,8 @@ pub fn for_lock(lock: &LfsLock) -> Box<dyn Tag> {
 
 impl Tag for BranchTag {
 
-    fn save(&self, store: &LockStore) {
-        let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
-        store.lock_file(&lock);
+    fn get_lock_string(&self) -> String {
+        ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("")
     }
 
     fn apply(&self, lock: &mut LfsLock) {
@@ -51,10 +50,5 @@ impl Tag for BranchTag {
 
     fn get_target_id(&self) -> u32 {
         self.target_id
-    }
-
-    fn cleanup(&self, _store: &LockStore) {
-        let lock = ["B", self.get_target_id().to_string().as_str(), "___", self.branch.as_str()].join("");
-        lock::LfsLock::unlock_file(&lock);
     }
 }

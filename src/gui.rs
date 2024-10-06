@@ -3,7 +3,7 @@ use egui::Separator;
 use std::collections::HashMap;
 use std::vec;
 
-use crate::fileexplorer;
+use crate::{fileexplorer, git};
 use crate::lock::tag::Tag;
 use crate::lock::{self, tag, LfsLock};
 
@@ -114,7 +114,7 @@ impl WranglerGui {
     }
 
     fn render_locks(&mut self, ui: &mut egui::Ui) {
-        let mut locks = self.lock_store.get_locks().clone();
+        let mut locks: Vec<&LfsLock> = self.lock_store.get_locks().clone().into_iter().filter(|&l| !git::is_lock_test(&l)).collect();
         locks.sort_by( |&l1, &l2| (self.lock_sort_fn)(l1, l2));
         let file_re = match regex::Regex::new(&self.file_search) {
             Err(_) => regex::Regex::new("").expect("Failed to compile empty regex somehow"),
@@ -177,7 +177,7 @@ impl eframe::App for WranglerGui {
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(lock);
+                                    let queue_tag = tag::queuetag::for_lock(lock, &self.lock_store);
                                     self.lock_store.tag(queue_tag);
                                 },
                                 None => (),
@@ -187,6 +187,20 @@ impl eframe::App for WranglerGui {
                     self.refresh_locks();
                 }
                 if ui.button("Sync locks").clicked() {
+                    self.refresh_locks();
+                }
+                if ui.button("Dequeue for locks").clicked() {
+                    for (id, sel) in &self.lock_selection {
+                        if *sel {
+                            match self.lock_store.get_lock_id(*id) {
+                                Some(lock) => {
+                                    let queue_tag = tag::queuetag::for_lock(lock, &self.lock_store);
+                                    queue_tag.delete(&self.lock_store);
+                                },
+                                None => (),
+                            }
+                        }
+                    }
                     self.refresh_locks();
                 }
             })

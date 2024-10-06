@@ -4,8 +4,18 @@ use crate::lock::tag::*;
 pub trait Tag {
     // Update a lock's info
     fn apply(&self, lock: &mut LfsLock);
+    // Get the string associated with the backing lock
+    fn get_lock_string(&self) -> String;
     // Save the relevant info to the lfs
-    fn save(&self, store: &LockStore);
+    fn save(&self, store: &LockStore)
+    {
+        store.lock_file(&self.get_lock_string());
+    }
+    // Delete the tag's backing lock
+    fn delete(&self, _store: &LockStore)
+    {
+        lock::LfsLock::unlock_file(&self.get_lock_string());
+    }
     // Get the id of the lock this tag is associated with
     fn get_target_id(&self) -> u32;
     // Apply and save
@@ -14,7 +24,9 @@ pub trait Tag {
         self.save(store);
     }
     // Clean up a tag that no longer points to a given lock
-    fn cleanup(&self, store: &LockStore);
+    fn cleanup(&self, store: &LockStore) {
+        self.delete(store);
+    }
 }
 
 type TagCtor = fn(&LfsLock) -> Option<Box<dyn Tag>>;

@@ -2,6 +2,7 @@ use core::fmt;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 use std::collections::HashMap;
+use crate::git;
 use crate::lock::tag::tag::Tag;
 
 use super::tag;
@@ -66,6 +67,7 @@ impl LfsLock {
     }
 
     pub fn unlock_file(p: &String) -> bool {
+        println!("Unlocking file: {}", p);
         let lock = ["git lfs unlock", p].join(" ");
         let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
@@ -202,6 +204,10 @@ impl LockStore {
 
     pub fn get_lock_id(&self, id: u32) -> Option<&LfsLock> {
         self.locks.iter().filter(|lock| lock.id == id).last()
+    }
+
+    pub fn get_lock_file(&self, file: &String) -> Option<&LfsLock> {
+        self.locks.iter().filter(|lock| lock.file == *file).last()
     }
 
     pub fn get_locks(&self) -> Vec<&LfsLock> {

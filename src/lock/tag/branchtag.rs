@@ -1,4 +1,4 @@
-use crate::lock::{lock, LfsLock, LockStore};
+use crate::lock::{lock, LfsLock};
 use crate::lock::tag::Tag;
 
 use regex::Regex;

@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::lock::{lock, LfsLock, LockStore};
+use crate::lock::{lock, LfsLock};
 use regex::Regex;
 use crate::lock::tag::Tag;
 

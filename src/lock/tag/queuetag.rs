@@ -1,6 +1,6 @@
 use crate::{git, lock::{lock, LfsLock}};
 use super::Tag;
-use crate::lock::LockStore;
+use crate::lock::lockstore::LockStore;
 
 use regex::Regex;
 
@@ -10,7 +10,7 @@ pub struct QueueTag {
     queue_owner: String,
 }
 
-pub fn for_lock(lock: &LfsLock, store: &LockStore) -> Box<QueueTag> {
+pub fn for_lock(lock: &LfsLock, store: &Box<dyn LockStore>) -> Box<QueueTag> {
     Box::new(
         QueueTag {
             target_id: lock.id,
@@ -53,7 +53,7 @@ impl Tag for QueueTag {
         self.target_id
     }
 
-    fn cleanup(&self, store: &LockStore) {
+    fn cleanup(&self, store: &Box<dyn LockStore>) {
         if self.queue_owner != git::get_lfs_user(store) {
             return
         }

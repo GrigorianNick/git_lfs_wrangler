@@ -1,13 +1,14 @@
 use std::fs;
 use std::fs::DirEntry;
+use lock::lockstore::LockStore;
 
-use crate::lock::{self, tag};
+use crate::lock::{self, lockstore, tag};
 
 pub struct FileExplorer {
     selected_files: Vec<std::path::PathBuf>,
     cwd: std::path::PathBuf,
     locked_files: Vec<std::path::PathBuf>,
-    lock_store: lock::LockStore,
+    lock_store: Box<dyn LockStore>,
 }
 
 impl Default for FileExplorer {
@@ -23,7 +24,7 @@ impl FileExplorer {
             selected_files: vec![],
             cwd: std::path::Path::new(&path).to_path_buf(),
             locked_files: vec![],
-            lock_store: lock::LockStore::new(),
+            lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
         };
         fs.refresh_locks();
         fs

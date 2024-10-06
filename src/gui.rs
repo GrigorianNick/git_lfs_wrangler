@@ -5,7 +5,8 @@ use std::vec;
 
 use crate::{fileexplorer, git};
 use crate::lock::tag::Tag;
-use crate::lock::{self, tag, LfsLock};
+use crate::lock::{self, lockstore, tag, LfsLock};
+use crate::lock::lockstore::LockStore;
 
 type LockSortFunc = dyn FnMut(&LfsLock, &LfsLock) -> std::cmp::Ordering;
 
@@ -13,7 +14,7 @@ pub struct WranglerGui {
     locks: Vec<LfsLock>,
     lock_selection: HashMap<u32, bool>,
     explorer: fileexplorer::FileExplorer,
-    lock_store: lock::lock::LockStore,
+    lock_store: Box<dyn LockStore>,
     lock_sort_fn: Box<LockSortFunc>,
     // Backing search texts
     file_search: String,
@@ -25,7 +26,7 @@ impl Default for WranglerGui {
             locks: vec![],
             lock_selection: HashMap::<u32, bool>::new(),
             explorer: fileexplorer::FileExplorer::new(".".into()),
-            lock_store: lock::lock::LockStore::new(),
+            lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
             lock_sort_fn: Box::new(file_sort),
             file_search: "".into(),
         }

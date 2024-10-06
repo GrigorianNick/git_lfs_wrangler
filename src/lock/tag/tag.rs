@@ -1,5 +1,6 @@
 use crate::lock::*;
 use crate::lock::tag::*;
+use crate::lock::lockstore::*;
 
 pub trait Tag {
     // Update a lock's info
@@ -7,24 +8,24 @@ pub trait Tag {
     // Get the string associated with the backing lock
     fn get_lock_string(&self) -> String;
     // Save the relevant info to the lfs
-    fn save(&self, store: &LockStore)
+    fn save(&self, store: &Box::<dyn LockStore>)
     {
         store.lock_file(&self.get_lock_string());
     }
     // Delete the tag's backing lock
-    fn delete(&self, _store: &LockStore)
+    fn delete(&self, _store: &Box::<dyn LockStore>)
     {
         lock::LfsLock::unlock_file(&self.get_lock_string());
     }
     // Get the id of the lock this tag is associated with
     fn get_target_id(&self) -> u32;
     // Apply and save
-    fn tag(&self, lock: &mut LfsLock, store: &mut LockStore) {
+    fn tag(&self, lock: &mut LfsLock, store: &mut Box::<dyn LockStore>) {
         self.apply(lock);
         self.save(store);
     }
     // Clean up a tag that no longer points to a given lock
-    fn cleanup(&self, store: &LockStore) {
+    fn cleanup(&self, store: &Box<dyn LockStore>) {
         self.delete(store);
     }
 }

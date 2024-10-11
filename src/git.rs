@@ -28,7 +28,7 @@ pub fn is_lock_test(lock: &lock::LfsLock) -> bool {
     lock.file.starts_with("I___")
 }
 
-pub fn get_lfs_user(store: &Box<dyn LockStore>) -> String {
+pub fn get_lfs_user(store: &dyn LockStore) -> String {
     println!("Checking for lfs user lock at: {}", &test_lock_string());
     match store.get_lock_file(&test_lock_string()) {
         Some(lock) => lock.owner.clone(),

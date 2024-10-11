@@ -12,17 +12,17 @@ pub struct DirTag {
 
 impl DirTag {
     // build a tag from its lfs lock representation
-    pub fn from_lock(lock: &LfsLock) -> Option<Box<dyn Tag>> {
+    pub fn from_lock(lock: &LfsLock) -> Option<DirTag> {
         let dir_re: Regex = Regex::new("D(?<id>[0-9]+)___(?<dir>.*)").unwrap();
         match dir_re.captures(&lock.file) {
             None => None,
             Some(capture) => {
                 match (capture.name("id"), capture.name("dir")) {
                     (Some(id), Some(dir)) => {
-                        Some(Box::new(DirTag{
+                        Some(DirTag{
                             target_id: id.as_str().parse::<u32>().expect("Failed to parse int"),
                             dir: dir.as_str().to_string(),
-                        }))
+                        })
                     }
                     _ => None,
                 }

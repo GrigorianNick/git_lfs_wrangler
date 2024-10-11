@@ -16,7 +16,6 @@ pub struct LfsLock {
     pub branch: Option<String>,
     pub dir: Option<String>,
     pub queue: Vec<String>,
-    pub tags: Vec<Box<dyn Tag>>,
 }
 
 impl LfsLock {
@@ -41,7 +40,6 @@ impl LfsLock {
             branch: branch,
             dir: None,
             queue: vec![],
-            tags: vec![],
         }
     }
 

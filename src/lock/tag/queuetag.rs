@@ -10,7 +10,7 @@ pub struct QueueTag {
     queue_owner: String,
 }
 
-pub fn for_lock(lock: &LfsLock, store: &Box<dyn LockStore>) -> Box<QueueTag> {
+pub fn for_lock(lock: &LfsLock, store: &dyn LockStore) -> Box<QueueTag> {
     Box::new(
         QueueTag {
             target_id: lock.id,
@@ -21,17 +21,17 @@ pub fn for_lock(lock: &LfsLock, store: &Box<dyn LockStore>) -> Box<QueueTag> {
 }
 
 impl QueueTag {
-    pub fn from_lock(lock: &LfsLock) -> Option<Box<dyn Tag>> {
+    pub fn from_lock(lock: &LfsLock) -> Option<impl Tag> {
         let re = Regex::new(r"Q(?<id>[0-9]+)_(?<owner>.+)___(?<file>.*)").expect("Regex failed to compile");
         match re.captures(&lock.file) {
             None => None,
             Some(c) =>  {
                 match (c.name("id"), c.name("owner"), c.name("file")) {
-                    (Some(id), Some(owner), Some(f)) => Some(Box::new(QueueTag{
+                    (Some(id), Some(owner), Some(f)) => Some(QueueTag{
                         target_id: id.as_str().parse().expect("failed to parse int"),
                         target_file: f.as_str().to_string(),
                         queue_owner: owner.as_str().to_string(),
-                    })),
+                    }),
                     _ => None,
                 }
             }
@@ -53,7 +53,7 @@ impl Tag for QueueTag {
         self.target_id
     }
 
-    fn cleanup(&self, store: &Box<dyn LockStore>) {
+    fn cleanup(&self, store: &dyn LockStore) {
         if self.queue_owner != git::get_lfs_user(store) {
             return
         }

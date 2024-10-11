@@ -20,7 +20,7 @@ pub trait LockStore {
     // Fetches raw locks
     fn fetch_raw_locks(&self) -> Vec<LfsLock>;
 
-    fn update_locks(self: &mut Self);
+    fn update_locks(&mut self);
 
     // locks a file, then returns the newly created lock
     fn lock_file_fetch(&self, p: &String) -> Option<&LfsLock>;
@@ -43,7 +43,7 @@ pub trait LockStore {
 
     fn unlock_id(&self, id: u32);
 
-    fn tag(&mut self, tag: Box<dyn tag::Tag>) {
+    fn tag(&mut self, tag: &dyn Tag) {
         match self.get_lock_id_mut(tag.get_target_id()) {
             None => (),
             Some(mut lock) => tag.apply(lock),

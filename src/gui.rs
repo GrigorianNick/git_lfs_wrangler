@@ -178,8 +178,8 @@ impl eframe::App for WranglerGui {
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(lock, &self.lock_store);
-                                    self.lock_store.tag(queue_tag);
+                                    let queue_tag = tag::queuetag::for_lock(lock, &*self.lock_store);
+                                    self.lock_store.tag(&*queue_tag);
                                 },
                                 None => (),
                             }
@@ -195,8 +195,8 @@ impl eframe::App for WranglerGui {
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(lock, &self.lock_store);
-                                    queue_tag.delete(&self.lock_store);
+                                    let queue_tag = tag::queuetag::for_lock(lock, &*self.lock_store);
+                                    queue_tag.delete(&*self.lock_store);
                                 },
                                 None => (),
                             }

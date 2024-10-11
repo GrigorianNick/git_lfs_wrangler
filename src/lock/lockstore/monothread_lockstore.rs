@@ -19,14 +19,12 @@ fn normalize_path(p: &String) -> String {
 
 pub struct MonothreadLockStore {
     locks: Vec<LfsLock>,
-    orphan_tags: Vec<Box<dyn Tag>>,
 }
 
 impl Default for MonothreadLockStore {
     fn default() -> Self {
         MonothreadLockStore {
             locks: vec![],
-            orphan_tags: vec![],
         }
     }
 }
@@ -51,11 +49,12 @@ impl LockStore for MonothreadLockStore {
         locks
     }
 
-    fn update_locks(self: &mut Self) {
+    fn update_locks(&mut self) {
         let locks = self.fetch_raw_locks();
 
         let mut lock_map = HashMap::<u32, LfsLock>::new();
-        let mut tags = Vec::<Box<dyn tag::Tag>>::new();
+        let mut tags = Vec::<Box<dyn Tag>>::new();
+        let mut orphan_tags = Vec::<Box<dyn Tag>>::new();
         for lock in locks {
             match tag::get_tag(&lock) {
                 None => {
@@ -67,8 +66,11 @@ impl LockStore for MonothreadLockStore {
             }
         }
         for tag in tags {
+            /*match enum_tag {
+                Dir(tag) => 
+            }*/
             match lock_map.get_mut(&tag.get_target_id()) {
-                None => self.orphan_tags.push(tag),
+                None => orphan_tags.push(tag),
                 Some(lock) => {
                     tag.apply(lock);
                 },
@@ -76,13 +78,13 @@ impl LockStore for MonothreadLockStore {
         }
         let mut recurse = false;
         self.locks = lock_map.into_values().collect();
-        for tag in &self.orphan_tags {
+        for tag in &orphan_tags {
             recurse = true;
-            //tag.cleanup(self);
+            tag.cleanup(self);
         }
         if recurse {
-            self.orphan_tags.clear();
-            self.update_locks();
+            println!("Recursing after cleanup");
+            self.update_locks()
         }
     }
 
@@ -94,6 +96,7 @@ impl LockStore for MonothreadLockStore {
             //let locks = self.fetch_raw_locks().into_iter().filter(|l| normalize_path(&l.file) == normalize_path(p));
             //locks.last()
         } else {
+            //self.orphan_tags.clear();
             None
         }
     }
@@ -122,7 +125,7 @@ impl LockStore for MonothreadLockStore {
         }
     }
 
-    fn tag(&mut self, tag: Box<dyn tag::Tag>) {
+    fn tag(&mut self, tag: &dyn tag::Tag) {
         for lock in &mut self.locks {
             if lock.id == tag.get_target_id() {
                 tag.apply(lock);

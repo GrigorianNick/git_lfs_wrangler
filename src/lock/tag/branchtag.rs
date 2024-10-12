@@ -10,12 +10,17 @@ pub struct BranchTag {
 
 impl BranchTag {
     pub fn from_lock(lock: &LfsLock) -> Option<impl Tag> {
+        println!("Checking for branch tag:{}", lock.file);
         let re = Regex::new("B(?<id>[0-9]+)___(?<branch>.*)").unwrap();
         match re.captures(&lock.file) {
-            None => None,
+            None => {
+                println!("not a branch tag");
+                None},
             Some(c) => {
+                println!("is a branch tag");
                 match (c.name("id"), c.name("branch")) {
                     (Some(id), Some(branch)) => {
+                        println!("Target id:{}", id.as_str());
                         Some(BranchTag {
                                 branch: branch.as_str().to_string(),
                                 target_id: id.as_str().parse::<u32>().unwrap(),
@@ -43,6 +48,7 @@ impl Tag for BranchTag {
     }
 
     fn apply(&self, lock: &mut LfsLock) {
+        println!("Applying BranchTag");
         lock.branch = Some(self.branch.clone());
     }
 

@@ -29,9 +29,15 @@ pub trait LockStore {
             match tag::get_tag(&lock) {
                 None => real_locks.push(lock),
                 Some(tag) => {
-                    match real_locks.iter_mut().find(|lock| lock.id == tag.get_target_id()) {
-                        None => (),
-                        Some(lock) => tag.apply(lock),
+                    match real_locks.iter_mut().find(|lock_c| {
+                        println!("Comparing ids:{}:{}", lock_c.id, tag.get_target_id());
+                        lock_c.id == tag.get_target_id()}) {
+                        None => {
+                            println!("No lock with id:{}", tag.get_target_id());
+                            ()},
+                        Some(lock) => {
+                            println!("Applying tag to lock: {}:{}", tag.get_lock_string(), lock.file);
+                            tag.apply(lock)},
                     }
                 },
             }
@@ -77,18 +83,15 @@ pub trait LockStore {
     }
 
     // lock a real file, not an arbitrary path
-    fn lock_real_file(&self, p: &String) -> bool {
+    fn lock_real_file(&self, p: &String) -> Option<LfsLock> {
         match self.lock_file_fetch(p) {
-            None => {
-                println!("Failed to lock real file");
-                false},
+            None => None,
             Some(lock) => {
-                println!("Secured real file lock");
                 let bt = branchtag::for_lock(&lock);
                 let dt = dirtag::for_lock(&lock);
                 self.lock_file(&bt.get_lock_string());
                 self.lock_file(&dt.get_lock_string());
-                true
+                Some(lock)
             }
         }
     }

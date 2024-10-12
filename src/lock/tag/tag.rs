@@ -55,6 +55,7 @@ pub enum Tags {
 
 // If a lock is a tag, then we hand back a tag. If it doesn't, None
 pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
+    println!("Fetching tag for:{}", lock.file);
     match dirtag::DirTag::from_lock(lock) {
         None => (),
         Some(tag) => {
@@ -62,18 +63,20 @@ pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
         },
     };
     match BranchTag::from_lock(lock) {
-        None => (),
+        None => {
+            println!("Not a branch tag:{}", lock.file);
+            ()
+        },
         Some(tag) => {
             return Some(Box::new(tag));
         },
     };
     match QueueTag::from_lock(lock) {
-        None => (),
+        None => None,
         Some(tag) => {
             return Some(Box::new(tag));
         }
     }
-    None
     /*for f in FACTORY.ctors {
         match f(lock) {
             None => (),

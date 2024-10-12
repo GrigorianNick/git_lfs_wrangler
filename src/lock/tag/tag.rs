@@ -35,18 +35,6 @@ pub trait Tag {
     }
 }
 
-type TagCtor = fn(&LfsLock) -> Option<dyn Tag>;
-
-/*struct TagFactory {
-    ctors: [Box<TagCtor>],
-}
-
-static FACTORY: &'static TagFactory = &TagFactory {
-    ctors: &[dirtag::DirTag::from_lock,
-    branchtag::BranchTag::from_lock,
-    queuetag::QueueTag::from_lock],
-};*/
-
 pub enum Tags {
     Dir(DirTag),
     Branch(BranchTag),
@@ -55,7 +43,6 @@ pub enum Tags {
 
 // If a lock is a tag, then we hand back a tag. If it doesn't, None
 pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
-    println!("Fetching tag for:{}", lock.file);
     match dirtag::DirTag::from_lock(lock) {
         None => (),
         Some(tag) => {
@@ -63,10 +50,7 @@ pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
         },
     };
     match BranchTag::from_lock(lock) {
-        None => {
-            println!("Not a branch tag:{}", lock.file);
-            ()
-        },
+        None => (),
         Some(tag) => {
             return Some(Box::new(tag));
         },
@@ -77,13 +61,4 @@ pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
             return Some(Box::new(tag));
         }
     }
-    /*for f in FACTORY.ctors {
-        match f(lock) {
-            None => (),
-            Some(tag) => {
-                return Some(tag);
-            }
-        }
-    }
-    None*/
 }

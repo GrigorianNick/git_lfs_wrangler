@@ -25,21 +25,17 @@ pub trait LockStore {
     fn get_locks(&self) -> Vec<LfsLock> {
         let locks = self.get_raw_locks();
         let mut real_locks = vec![];
+        let mut tags = vec![];
         for lock in locks {
             match tag::get_tag(&lock) {
                 None => real_locks.push(lock),
-                Some(tag) => {
-                    match real_locks.iter_mut().find(|lock_c| {
-                        println!("Comparing ids:{}:{}", lock_c.id, tag.get_target_id());
-                        lock_c.id == tag.get_target_id()}) {
-                        None => {
-                            println!("No lock with id:{}", tag.get_target_id());
-                            ()},
-                        Some(lock) => {
-                            println!("Applying tag to lock: {}:{}", tag.get_lock_string(), lock.file);
-                            tag.apply(lock)},
-                    }
-                },
+                Some(tag) => tags.push(tag),
+            }
+        }
+        for tag in tags {
+            match real_locks.iter_mut().find(|lock| lock.id == tag.get_target_id()) {
+                None => (),
+                Some(l) => tag.apply(l),
             }
         }
         real_locks
@@ -62,17 +58,13 @@ pub trait LockStore {
     // Lock a file
     fn lock_file(&self, p: &String) -> bool  {
         let lock = ["git lfs lock", p].join(" ");
-        println!("Locking file {} with {}", p, lock);
         let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {
             Err(e) => {
                 println!("Error: {}", e.to_string());
                 false
             },
-            Ok(r) => {
-                println!("Success for: {}", p);
-                r.status.success()
-            }
+            Ok(r) => r.status.success(),
         }
     }
 

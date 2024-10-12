@@ -31,7 +31,6 @@ impl FileExplorer {
     }
 
     pub fn refresh_locks(&mut self) {
-        self.lock_store.update_locks();
         let locks = self.lock_store.get_locks();
         let mut lock_paths = vec![];
         for lock in locks {

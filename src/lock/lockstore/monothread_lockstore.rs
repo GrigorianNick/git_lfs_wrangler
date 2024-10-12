@@ -32,16 +32,14 @@ impl Default for MonothreadLockStore {
 impl MonothreadLockStore {
 
     pub fn new() -> Box<Self> {
-        let mut store = Box::new(MonothreadLockStore::default());
-        store.update_locks();
-        store
+        Box::new(MonothreadLockStore::default())
     }
 }
 
 impl LockStore for MonothreadLockStore {
 
     // Fetches raw locks
-    fn fetch_raw_locks(&self) -> Vec<LfsLock> {
+    fn get_raw_locks(&self) -> Vec<LfsLock> {
         let out = Command::new("cmd").args(["/C", "git lfs locks"]).creation_flags(CREATE_NO_WINDOW).output().expect("Failed to execute process");
         let out = String::from_utf8_lossy(&out.stdout).to_string();
         let lines: Vec<&str> = out.split("\n").filter(|&s| !s.is_empty()).collect();
@@ -49,107 +47,48 @@ impl LockStore for MonothreadLockStore {
         locks
     }
 
-    fn update_locks(&mut self) {
-        let locks = self.fetch_raw_locks();
-
-        let mut lock_map = HashMap::<u32, LfsLock>::new();
-        let mut tags = Vec::<Box<dyn Tag>>::new();
-        let mut orphan_tags = Vec::<Box<dyn Tag>>::new();
-        for lock in locks {
-            match tag::get_tag(&lock) {
-                None => {
-                    lock_map.insert(lock.id, lock);
-                }
-                Some(tag) => {
-                    tags.push(tag);
-                },
-            }
-        }
-        for tag in tags {
-            /*match enum_tag {
-                Dir(tag) => 
-            }*/
-            match lock_map.get_mut(&tag.get_target_id()) {
-                None => orphan_tags.push(tag),
-                Some(lock) => {
-                    tag.apply(lock);
-                },
-            }
-        }
-        let mut recurse = false;
-        self.locks = lock_map.into_values().collect();
-        for tag in &orphan_tags {
-            recurse = true;
-            tag.cleanup(self);
-        }
-        if recurse {
-            println!("Recursing after cleanup");
-            self.update_locks()
-        }
-    }
-
-    // locks a file, then returns the newly created lock
-    fn lock_file_fetch(&self, p: &String) -> Option<&LfsLock>{
-        println!("Attempting to lock fetch:{}", p);
-        if self.lock_file(p) {
-            self.get_lock_file(p)
-            //let locks = self.fetch_raw_locks().into_iter().filter(|l| normalize_path(&l.file) == normalize_path(p));
-            //locks.last()
-        } else {
-            //self.orphan_tags.clear();
-            None
-        }
-    }
-
     fn lock_file(&self, p: &String) -> bool {
-        let lock = ["git lfs lock", p].join(" ");
-        println!("Locking file {} with {}", p, lock);
-        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
-        match cmd {
-            Err(e) => {
-                println!("Error: {}", e.to_string());
-                false
-            },
-            Ok(r) => {
-                println!("Success for: {}", p);
-                r.status.success()
-            }
+        let out = Command::new("cmd").args(["/C".into(), ["git lfs lock ", p.as_str()].join("")]).creation_flags(CREATE_NO_WINDOW).output();
+        match out {
+            Err(_) => false,
+            Ok(r) => r.status.success(),
         }
     }
 
-    fn unlock_id(&self, id: u32) {
-        for lock in &self.locks {
-            if lock.id == id {
-                LfsLock::unlock_file(&lock.file);
-            }
+    fn unlock_file(&self, p: &String) -> bool {
+        let out = Command::new("cmd").args(["/C".into(), ["git lfs unlock ", p.as_str()].join("")]).creation_flags(CREATE_NO_WINDOW).output();
+        match out {
+            Err(_) => false,
+            Ok(r) => r.status.success(),
         }
     }
 
-    fn tag(&mut self, tag: &dyn tag::Tag) {
-        for lock in &mut self.locks {
-            if lock.id == tag.get_target_id() {
-                tag.apply(lock);
+    fn update(&self) {
+        let locks = self.get_raw_locks();
+        let mut orphan_tags = vec![];
+        for lock in &locks {
+            match tag::get_tag(&lock) {
+                None => (),
+                Some(tag) => {
+                    if locks.iter().find(|lock| lock.id == tag.get_target_id()).is_none() {
+                        orphan_tags.push(tag);
+                    }
+                },
             }
         }
-        self.lock_file(&tag.get_lock_string());
+        if !orphan_tags.is_empty() {
+            for tag in orphan_tags {
+                tag.cleanup(self);
+            }
+            self.update();
+        }
     }
 
-    fn get_lock_id(&self, id: u32) -> Option<&LfsLock> {
-        self.locks.iter().filter(|lock| lock.id == id).last()
-    }
-
-    fn get_lock_id_mut(&mut self, id: u32) -> Option<&mut LfsLock> {
-        self.locks.iter_mut().filter(|lock| lock.id == id).last()
-    }
-
-    fn get_lock_file(&self, file: &String) -> Option<&LfsLock> {
-        self.locks.iter().filter(|lock| {
-            println!("Comparing lock file paths: {}:{}", lock.file, *file);
-            lock.file == *file}
-        ).last()
-    }
-
-    fn get_locks(&self) -> Vec<&LfsLock> {
-        self.locks.iter().collect()
+    fn unlock_id(&self, id: u32) -> bool {
+        let out = Command::new("cmd").args(["/C".into(), ["git lfs unlock --id ".into(), id.to_string()].join("")]).creation_flags(CREATE_NO_WINDOW).output();
+        match out {
+            Err(_) => false,
+            Ok(r) => r.status.success(),
+        }
     }
 }

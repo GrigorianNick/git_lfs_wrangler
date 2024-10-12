@@ -115,18 +115,19 @@ impl WranglerGui {
     }
 
     fn render_locks(&mut self, ui: &mut egui::Ui) {
-        let mut locks: Vec<&LfsLock> = self.lock_store.get_locks().clone().into_iter().filter(|&l| !git::is_lock_test(&l)).collect();
-        locks.sort_by( |&l1, &l2| (self.lock_sort_fn)(l1, l2));
+        /*let mut locks: Vec<&LfsLock> = &self.locks.into_iter().filter(|l| !git::is_lock_test(&l)).collect();
+        locks.sort_by( |l1, l2| (self.lock_sort_fn)(&l1, &l2));*/
+        self.locks.sort_by( |l1, l2| (self.lock_sort_fn)(&l1, &l2));
         let file_re = match regex::Regex::new(&self.file_search) {
             Err(_) => regex::Regex::new("").expect("Failed to compile empty regex somehow"),
             Ok(r) => r,
         };
-        for lock in locks {
+        for lock in &self.locks {
             match self.lock_selection.get_mut(&lock.id) {
                 None => (),
                 Some(b) => {
                     if file_re.is_match(&lock.file) {
-                        Self::render_lock(b, lock, ui)
+                        Self::render_lock(b, &lock, ui)
                     }
                 },
             }
@@ -143,10 +144,10 @@ impl WranglerGui {
     }
 
     fn refresh_locks<'b>(&'b mut self) {
-        self.lock_store.update_locks();
         self.lock_selection = HashMap::<u32, bool>::new();
-        let locks = self.lock_store.get_locks();
-        for lock in locks {
+        self.lock_store.update();
+        self.locks = self.lock_store.get_locks().into_iter().filter(|lock| !git::is_lock_test(lock)).collect();
+        for lock in &self.locks {
             self.lock_selection.insert(lock.id, false);
         }
         self.explorer.refresh_locks();
@@ -177,9 +178,9 @@ impl eframe::App for WranglerGui {
                     for (id, sel) in &self.lock_selection {
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
-                                Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(lock, &*self.lock_store);
-                                    self.lock_store.tag(&*queue_tag);
+                                Some(mut lock) => {
+                                    let queue_tag = tag::queuetag::for_lock(&lock, &*self.lock_store);
+                                    queue_tag.tag(&mut lock, &*self.lock_store);
                                 },
                                 None => (),
                             }
@@ -195,7 +196,7 @@ impl eframe::App for WranglerGui {
                         if *sel {
                             match self.lock_store.get_lock_id(*id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(lock, &*self.lock_store);
+                                    let queue_tag = tag::queuetag::for_lock(&lock, &*self.lock_store);
                                     queue_tag.delete(&*self.lock_store);
                                 },
                                 None => (),

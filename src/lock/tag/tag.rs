@@ -24,7 +24,7 @@ pub trait Tag {
     // Get the id of the lock this tag is associated with
     fn get_target_id(&self) -> u32;
     // Apply and save
-    fn tag(&self, lock: &mut LfsLock, store: &mut dyn LockStore) {
+    fn tag(&self, lock: &mut LfsLock, store: &dyn LockStore) {
         self.apply(lock);
         self.save(store);
     }

@@ -68,13 +68,12 @@ impl Tag for QueueTag {
                 } else {
                     println!("Failed to grab file, relocking");
                     println!("Released tag lock? {}", lock::LfsLock::unlock_file(&self.get_lock_string()));
-                    //lock::LfsLock::unlock_file(&self.get_lock_string());
                     match store.get_lock_file(&self.target_file) {
                         // Nonsense case?
                         None => (),
                         Some(lock) => {
                             println!("Found queue target for new lock");
-                            let new_tag = for_lock(lock, store);
+                            let new_tag = for_lock(&lock, store);
                             new_tag.save(store);
                         }
                     }

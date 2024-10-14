@@ -24,7 +24,8 @@ impl FileExplorer {
             selected_files: vec![],
             cwd: std::path::Path::new(&path).to_path_buf(),
             locked_files: vec![],
-            lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
+            //lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
+            lock_store: lockstore::multithreaded_lockstore::MultithreadedLockStore::new(),
         };
         fs.refresh_locks();
         fs
@@ -111,19 +112,6 @@ impl FileExplorer {
         if ui.button("Lock files").clicked() {
             for file in &self.selected_files {
                 self.lock_store.lock_real_file(&file.to_string_lossy().to_string());
-                /*let (branch_tag, dir_tag) = match self.lock_store.lock_file_fetch(&file.to_string_lossy().to_string()) {
-                    None => (None, None),
-                    Some(lock) => {
-                        (Some(tag::branchtag::for_lock(&lock)), Some(tag::dirtag::for_lock(&lock)))
-                    },
-                };
-                match (branch_tag, dir_tag) {
-                    (Some(bt), Some(dt)) => {
-                        self.lock_store.tag(bt);
-                        self.lock_store.tag(dt);
-                    }
-                    _ => (),
-                }*/
             }
             self.selected_files.clear();
             should_update_locks = true;

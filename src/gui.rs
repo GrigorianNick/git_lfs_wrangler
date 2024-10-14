@@ -26,7 +26,8 @@ impl Default for WranglerGui {
             locks: vec![],
             lock_selection: HashMap::<u32, bool>::new(),
             explorer: fileexplorer::FileExplorer::new(".".into()),
-            lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
+            //lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
+            lock_store: lockstore::multithreaded_lockstore::MultithreadedLockStore::new(),
             lock_sort_fn: Box::new(file_sort),
             file_search: "".into(),
         }
@@ -115,8 +116,6 @@ impl WranglerGui {
     }
 
     fn render_locks(&mut self, ui: &mut egui::Ui) {
-        /*let mut locks: Vec<&LfsLock> = &self.locks.into_iter().filter(|l| !git::is_lock_test(&l)).collect();
-        locks.sort_by( |l1, l2| (self.lock_sort_fn)(&l1, &l2));*/
         self.locks.sort_by( |l1, l2| (self.lock_sort_fn)(&l1, &l2));
         let file_re = match regex::Regex::new(&self.file_search) {
             Err(_) => regex::Regex::new("").expect("Failed to compile empty regex somehow"),
@@ -131,14 +130,13 @@ impl WranglerGui {
                     }
                 },
             }
-            //Self::render_lock(self.lock_selection.get_mut(&lock.id).unwrap(), lock, ui);
         }
     }
 
     pub fn release_locks(&self) {
         for (id, selected) in &self.lock_selection {
             if *selected {
-                self.lock_store.unlock_id(*id);
+                self.lock_store.unlock_id_fast(*id);
             }
         }
     }
@@ -157,18 +155,13 @@ impl WranglerGui {
 impl eframe::App for WranglerGui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::SidePanel::left("file explorer").show(ctx, |ui| {
-            if self.explorer.render(ui) {
-                self.refresh_locks();
-            }
-        });
-        egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.set_height_range(100.0..=500.0);
-                egui::Grid::new("lfs lock view").show(ui, |ui| {
-                    self.render_lock_headers(ui);
-                    self.render_locks(ui);
-                });
+                if self.explorer.render(ui) {
+                    self.refresh_locks();
+                }
             });
+        });
+        egui::TopBottomPanel::bottom("Control Buttons").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new("Release locks")).clicked() {
                     self.release_locks();
@@ -206,6 +199,15 @@ impl eframe::App for WranglerGui {
                     self.refresh_locks();
                 }
             })
+        });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_height_range(100.0..=500.0);
+                egui::Grid::new("lfs lock view").show(ui, |ui| {
+                    self.render_lock_headers(ui);
+                    self.render_locks(ui);
+                });
+            });
         });
     }
 }

@@ -57,34 +57,29 @@ impl Tag for QueueTag {
         if self.queue_owner != git::get_lfs_user(store) {
             return
         }
-        let target_lock = store.get_lock_id(self.get_target_id());
-        match target_lock {
+        match store.get_lock_id(self.get_target_id()) {
             // target lock doesn't exist, grab it
             None => {
-                println!("Queue target doesn't exist");
-                if store.lock_real_file(&self.target_file) {
-                    println!("Grabbed lock. Released tag lock? {}", lock::LfsLock::unlock_file(&self.get_lock_string()));
-                    //lock::LfsLock::unlock_file(&self.get_lock_string());
-                } else {
-                    println!("Failed to grab file, relocking");
-                    println!("Released tag lock? {}", lock::LfsLock::unlock_file(&self.get_lock_string()));
-                    //lock::LfsLock::unlock_file(&self.get_lock_string());
-                    match store.get_lock_file(&self.target_file) {
-                        // Nonsense case?
-                        None => (),
-                        Some(lock) => {
-                            println!("Found queue target for new lock");
-                            let new_tag = for_lock(lock, store);
-                            new_tag.save(store);
-                        }
+                match store.lock_real_file(&self.target_file) {
+                    None => {
+                        match store.get_lock_file(&self.target_file) {
+                            // Nonesense case?
+                            None => (),
+                            Some(lock) => {
+                                let new_tag = for_lock(&lock, store);
+                                new_tag.save(store);
+                            }
+                        };
                     }
-                }
+                    Some(_) => {
+                        store.unlock_file(&self.get_lock_string());
+                    },
+                };
             }
             // target exists, if we own it nuke ourselves
             Some(l) => {
-                println!("Queue target exists. Owners: {}:{}", l.owner, git::get_lfs_user(store));
                 if l.owner == git::get_lfs_user(store) {
-                    lock::LfsLock::unlock_file(&self.get_lock_string());
+                    store.unlock_file(&self.get_lock_string());
                 }
             }
         }

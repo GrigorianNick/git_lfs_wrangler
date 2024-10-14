@@ -15,57 +15,95 @@ fn normalize_path(p: &String) -> String {
     }
 }
 
+// A trait for extracting LfsLocks from a repo
 pub trait LockStore {
 
-    // Fetches raw locks
-    fn fetch_raw_locks(&self) -> Vec<LfsLock>;
+    // Straight pipe from git to untagged locks
+    fn get_raw_locks(&self) -> Vec<LfsLock>;
 
-    fn update_locks(&mut self);
+    // Pull down fully tagged and qualified locks
+    fn get_locks(&self) -> Vec<LfsLock> {
+        let locks = self.get_raw_locks();
+        let mut real_locks = vec![];
+        let mut tags = vec![];
+        for lock in locks {
+            match tag::get_tag(&lock) {
+                None => real_locks.push(lock),
+                Some(tag) => tags.push(tag),
+            }
+        }
+        for tag in tags {
+            match real_locks.iter_mut().find(|lock| lock.id == tag.get_target_id()) {
+                None => (),
+                Some(l) => tag.apply(l),
+            }
+        }
+        real_locks
+    }
+
+    // Pull down fully tagged and qualified lock
+    fn get_lock_file(&self, p: &String) -> Option<LfsLock> {
+        self.get_locks().into_iter().find(|lock| normalize_path(&lock.file) == normalize_path(p))
+    }
+
+    // Pull down fully tagged and qualified lock
+    fn get_lock_id(&self, id: u32) -> Option<LfsLock> {
+        self.get_locks().into_iter().filter(|lock| lock.id == id).last()
+    }
+
+    /* Find pending actions and execute them. e.g. cleaning up orphaned tags or deleting locks when
+    the owning branch no longer exists */
+    fn update(&self);
+
+    // Lock a file
+    fn lock_file(&self, p: &String) -> bool  {
+        let lock = ["git lfs lock", p].join(" ");
+        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
+        match cmd {
+            Err(e) => {
+                println!("Error: {}", e.to_string());
+                false
+            },
+            Ok(r) => r.status.success(),
+        }
+    }
+
+    fn lock_file_fast(&self, p: &String) {
+        self.lock_file(p);
+    }
 
     // locks a file, then returns the newly created lock
-    fn lock_file_fetch(&self, p: &String) -> Option<&LfsLock>;
-
-    fn lock_file(&self, p: &String) -> bool;
+    fn lock_file_fetch(&self, p: &String) -> Option<LfsLock> {
+        match self.lock_file(p) {
+            true => self.get_lock_file(p),
+            false => None
+        }
+    }
 
     // lock a real file, not an arbitrary path
-    fn lock_real_file(&self, p: &String) -> bool {
+    fn lock_real_file(&self, p: &String) -> Option<LfsLock> {
         match self.lock_file_fetch(p) {
-            None => false,
+            None => None,
             Some(lock) => {
                 let bt = branchtag::for_lock(&lock);
                 let dt = dirtag::for_lock(&lock);
-                self.lock_file(&bt.get_lock_string());
-                self.lock_file(&dt.get_lock_string());
-                true
+                self.lock_file_fast(&bt.get_lock_string());
+                self.lock_file_fast(&dt.get_lock_string());
+                Some(lock)
             }
         }
     }
 
-    fn unlock_id(&self, id: u32);
+    fn unlock_file(&self, p: &String) -> bool;
 
-    fn tag(&mut self, tag: &dyn Tag) {
-        match self.get_lock_id_mut(tag.get_target_id()) {
-            None => (),
-            Some(mut lock) => tag.apply(lock),
-        }
-        self.lock_file(&tag.get_lock_string());
-        //tag.save(self);
-        /*for lock in &mut self.locks {
-            if lock.id == tag.get_target_id() {
-                tag.apply(lock);
-            }
-        }
-        tag.save(self);*/
+    fn unlock_file_fast(&self, p: &String) {
+        self.unlock_file(p);
     }
 
-    fn get_lock_id(&self, id: u32) -> Option<&LfsLock>;
+    fn unlock_id(&self, id: u32) -> bool;
 
-    fn get_lock_id_mut(&mut self, id: u32) -> Option<&mut LfsLock>;
-
-    fn get_lock_file(&self, file: &String) -> Option<&LfsLock> {
-        self.get_locks().into_iter().filter(|lock| lock.file == *file).last()
-        //self.locks.iter().filter(|lock| lock.file == *file).last()
+    fn unlock_id_fast(&self, id: u32) {
+        self.unlock_id(id);
     }
 
-    fn get_locks(&self) -> Vec<&LfsLock>;
 }

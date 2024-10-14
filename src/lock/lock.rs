@@ -57,7 +57,6 @@ impl LfsLock {
     }
 
     pub fn unlock_file(p: &String) -> bool {
-        println!("Unlocking file: {}", p);
         let lock = ["git lfs unlock", p].join(" ");
         let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
         match cmd {

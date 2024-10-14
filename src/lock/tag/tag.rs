@@ -24,7 +24,7 @@ pub trait Tag {
     // Get the id of the lock this tag is associated with
     fn get_target_id(&self) -> u32;
     // Apply and save
-    fn tag(&self, lock: &mut LfsLock, store: &mut dyn LockStore) {
+    fn tag(&self, lock: &mut LfsLock, store: &dyn LockStore) {
         self.apply(lock);
         self.save(store);
     }
@@ -34,18 +34,6 @@ pub trait Tag {
         self.delete(store);
     }
 }
-
-type TagCtor = fn(&LfsLock) -> Option<dyn Tag>;
-
-/*struct TagFactory {
-    ctors: [Box<TagCtor>],
-}
-
-static FACTORY: &'static TagFactory = &TagFactory {
-    ctors: &[dirtag::DirTag::from_lock,
-    branchtag::BranchTag::from_lock,
-    queuetag::QueueTag::from_lock],
-};*/
 
 pub enum Tags {
     Dir(DirTag),
@@ -68,19 +56,9 @@ pub fn get_tag(lock: &LfsLock) -> Option<Box<dyn Tag>> {
         },
     };
     match QueueTag::from_lock(lock) {
-        None => (),
+        None => None,
         Some(tag) => {
             return Some(Box::new(tag));
         }
     }
-    None
-    /*for f in FACTORY.ctors {
-        match f(lock) {
-            None => (),
-            Some(tag) => {
-                return Some(tag);
-            }
-        }
-    }
-    None*/
 }

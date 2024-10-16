@@ -1,4 +1,4 @@
-use crate::{git, lock::{lock, LfsLock}};
+use crate::{git, lock::LfsLock};
 use super::Tag;
 use crate::lock::lockstore::LockStore;
 
@@ -10,12 +10,12 @@ pub struct QueueTag {
     queue_owner: String,
 }
 
-pub fn for_lock(lock: &LfsLock, store: &dyn LockStore) -> Box<QueueTag> {
+pub fn for_lock(lock: &LfsLock) -> Box<QueueTag> {
     Box::new(
         QueueTag {
             target_id: lock.id,
             target_file: lock.file.clone(),
-            queue_owner: git::get_lfs_user(store),
+            queue_owner: git::get_lfs_user(),
         }
     )
 }
@@ -54,34 +54,22 @@ impl Tag for QueueTag {
     }
 
     fn cleanup(&self, store: &dyn LockStore) {
-        if self.queue_owner != git::get_lfs_user(store) {
+        if self.queue_owner != git::get_lfs_user() {
             return
         }
-        match store.get_lock_id(self.get_target_id()) {
-            // target lock doesn't exist, grab it
+        match store.lock_real_file(&self.target_file) {
             None => {
-                match store.lock_real_file(&self.target_file) {
-                    None => {
-                        match store.get_lock_file(&self.target_file) {
-                            // Nonesense case?
-                            None => (),
-                            Some(lock) => {
-                                let new_tag = for_lock(&lock, store);
-                                new_tag.save(store);
-                            }
-                        };
+                match store.get_lock_file(&self.target_file) {
+                    // Nonesense case?
+                    None => (),
+                    Some(lock) => {
+                        let new_tag = for_lock(&lock);
+                        new_tag.save(store);
                     }
-                    Some(_) => {
-                        store.unlock_file(&self.get_lock_string());
-                    },
                 };
             }
-            // target exists, if we own it nuke ourselves
-            Some(l) => {
-                if l.owner == git::get_lfs_user(store) {
-                    store.unlock_file(&self.get_lock_string());
-                }
-            }
-        }
+            Some(_) => (),
+        };
+        store.unlock_file_fast(&self.get_lock_string());
     }
 }

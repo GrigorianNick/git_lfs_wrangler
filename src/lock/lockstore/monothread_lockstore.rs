@@ -1,7 +1,7 @@
+use crate::git;
 use crate::lock::LfsLock;
 use crate::lock::tag::*;
 
-use std::collections::HashMap;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 
@@ -9,22 +9,12 @@ use super::LockStore;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-fn normalize_path(p: &String) -> String {
-    let s = p.replace("\\", "/");
-    match s.strip_prefix("./") {
-        None => s,
-        Some(stripped) => stripped.to_string(),
-    }
-}
-
 pub struct MonothreadLockStore {
-    locks: Vec<LfsLock>,
 }
 
 impl Default for MonothreadLockStore {
     fn default() -> Self {
         MonothreadLockStore {
-            locks: vec![],
         }
     }
 }
@@ -47,11 +37,30 @@ impl LockStore for MonothreadLockStore {
         locks
     }
 
-    fn lock_file(&self, p: &String) -> bool {
-        let out = Command::new("cmd").args(["/C".into(), ["git lfs lock ", p.as_str()].join("")]).creation_flags(CREATE_NO_WINDOW).output();
-        match out {
-            Err(_) => false,
-            Ok(r) => r.status.success(),
+    fn lock_file_fetch(&self, p: &String) -> Option<LfsLock> {
+        let lock = ["git lfs lock", p, "--json"].join(" ");
+        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
+        match cmd {
+            Err(e) => {
+                println!("Error: {}", e.to_string());
+                None
+            },
+            Ok(r) => {
+                if !r.status.success() {
+                    return None;
+                }
+                let json_str = std::str::from_utf8(&r.stdout).expect("Failed to get stdout");
+                let json: serde_json::Value = serde_json::from_str(json_str).expect("Failed to parse json");
+                let id = str::parse::<u32>(json[0]["id"].as_str().unwrap()).expect("Failed to parse value");
+                Some(LfsLock{
+                    file: p.clone(),
+                    owner: git::get_lfs_user(),
+                    id: id as u32,
+                    branch: None,
+                    dir: None,
+                    queue: vec![],
+                })
+            }
         }
     }
 
@@ -64,9 +73,13 @@ impl LockStore for MonothreadLockStore {
     }
 
     fn update(&self) {
+        let user = git::get_lfs_user();
         let locks = self.get_raw_locks();
         let mut orphan_tags = vec![];
         for lock in &locks {
+            if lock.owner != user {
+                continue;
+            }
             match tag::get_tag(&lock) {
                 None => (),
                 Some(tag) => {

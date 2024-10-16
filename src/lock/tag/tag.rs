@@ -14,12 +14,12 @@ pub trait Tag {
     // Save the relevant info to the lfs
     fn save(&self, store: &dyn LockStore)
     {
-        store.lock_file(&self.get_lock_string());
+        store.lock_file_fast(&self.get_lock_string());
     }
     // Delete the tag's backing lock
-    fn delete(&self, _store: &dyn LockStore)
+    fn delete(&self, store: &dyn LockStore)
     {
-        lock::LfsLock::unlock_file(&self.get_lock_string());
+        store.unlock_file_fast(&self.get_lock_string());
     }
     // Get the id of the lock this tag is associated with
     fn get_target_id(&self) -> u32;

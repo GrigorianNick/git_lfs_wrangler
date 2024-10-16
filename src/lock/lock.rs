@@ -1,13 +1,4 @@
 use core::fmt;
-use std::process::Command;
-use std::os::windows::process::CommandExt;
-use std::collections::HashMap;
-use crate::git;
-use crate::lock::tag::tag::Tag;
-
-use super::tag;
-
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct LfsLock {
     pub file: String,
@@ -40,28 +31,6 @@ impl LfsLock {
             branch: branch,
             dir: None,
             queue: vec![],
-        }
-    }
-
-    pub fn unlock(&self) {
-        let unlock = ["git lfs unlock -i", &self.id.to_string()].join(" ");
-        let _ = Command::new("cmd").args(["/C", &unlock]).creation_flags(CREATE_NO_WINDOW).output();
-        match &self.branch {
-            None => (),
-            Some(branch) => {
-                let tag_name = [self.id.to_string(), branch.to_string()].join("___");
-                let unlock_tag = ["git lfs unlock", &tag_name].join(" ");
-                let _ = Command::new("cmd").args(["/C", &unlock_tag]).creation_flags(CREATE_NO_WINDOW).output();
-            }
-        }
-    }
-
-    pub fn unlock_file(p: &String) -> bool {
-        let lock = ["git lfs unlock", p].join(" ");
-        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
-        match cmd {
-            Err(_) => false,
-            Ok(e) => e.status.success(),
         }
     }
 }

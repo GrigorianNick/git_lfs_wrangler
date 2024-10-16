@@ -5,7 +5,7 @@ use std::vec;
 
 use crate::{fileexplorer, git};
 use crate::lock::tag::Tag;
-use crate::lock::{self, lockstore, tag, LfsLock};
+use crate::lock::{lockstore, tag, LfsLock};
 use crate::lock::lockstore::LockStore;
 
 type LockSortFunc = dyn FnMut(&LfsLock, &LfsLock) -> std::cmp::Ordering;
@@ -170,16 +170,15 @@ impl eframe::App for WranglerGui {
                 if ui.button("Enqueue for locks").clicked() {
                     for (id, sel) in &self.lock_selection {
                         if *sel {
-                            match self.lock_store.get_lock_id(*id) {
+                            match self.locks.iter_mut().find(|lock| lock.id == *id) {
                                 Some(mut lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(&lock, &*self.lock_store);
+                                    let queue_tag = tag::queuetag::for_lock(&lock);
                                     queue_tag.tag(&mut lock, &*self.lock_store);
                                 },
                                 None => (),
                             }
                         }
                     }
-                    self.refresh_locks();
                 }
                 if ui.button("Sync locks").clicked() {
                     self.refresh_locks();
@@ -187,16 +186,16 @@ impl eframe::App for WranglerGui {
                 if ui.button("Dequeue for locks").clicked() {
                     for (id, sel) in &self.lock_selection {
                         if *sel {
-                            match self.lock_store.get_lock_id(*id) {
+                            match self.locks.iter_mut().find(|lock| lock.id == *id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(&lock, &*self.lock_store);
+                                    let queue_tag = tag::queuetag::for_lock(&lock);
                                     queue_tag.delete(&*self.lock_store);
+                                    lock.queue.retain(|v| *v != git::get_lfs_user());
                                 },
                                 None => (),
                             }
                         }
                     }
-                    self.refresh_locks();
                 }
             })
         });

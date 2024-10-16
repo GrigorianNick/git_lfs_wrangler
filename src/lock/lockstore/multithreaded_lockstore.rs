@@ -43,7 +43,6 @@ fn handle_request(request: Request, store: &impl LockStore) {
                 Some(tx) => tx.send(store.unlock_id(id)).unwrap()
             }
         },
-        _ => (),
     }
 }
 
@@ -87,6 +86,24 @@ impl LockStore for MultithreadedLockStore {
     fn update(&self) {
         match self.chan.send(Request::Update) {
             _ => ()
+        }
+    }
+
+    fn lock_file_fetch(&self, p: &String) -> Option<LfsLock> {
+        let (tx, rx) = mpsc::channel();
+        self.chan.send(Request::LockFile(p.clone(), Some(tx))).unwrap();
+        match rx.recv() {
+            Err(_) => None,
+            Ok(r) => r
+        }
+    }
+
+    fn lock_file(&self, p: &String) -> bool {
+        let (tx, rx) = mpsc::channel();
+        self.chan.send(Request::LockFile(p.clone(), Some(tx))).unwrap();
+        match rx.recv() {
+            Err(_) => false,
+            Ok(r) => r.is_some(),
         }
     }
 

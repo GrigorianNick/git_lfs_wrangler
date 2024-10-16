@@ -1,12 +1,6 @@
 use crate::lock::LfsLock;
 use crate::lock::tag::*;
 
-use std::collections::HashMap;
-use std::process::Command;
-use std::os::windows::process::CommandExt;
-
-const CREATE_NO_WINDOW: u32 = 0x08000000;
-
 fn normalize_path(p: &String) -> String {
     let s = p.replace("\\", "/");
     match s.strip_prefix("./") {
@@ -43,7 +37,7 @@ pub trait LockStore {
 
     // Pull down fully tagged and qualified lock
     fn get_lock_file(&self, p: &String) -> Option<LfsLock> {
-        self.get_locks().into_iter().find(|lock| normalize_path(&lock.file) == normalize_path(p))
+        self.get_raw_locks().into_iter().find(|lock| normalize_path(&lock.file) == normalize_path(p))
     }
 
     // Pull down fully tagged and qualified lock
@@ -57,28 +51,15 @@ pub trait LockStore {
 
     // Lock a file
     fn lock_file(&self, p: &String) -> bool  {
-        let lock = ["git lfs lock", p].join(" ");
-        let cmd = Command::new("cmd").args(["/C", &lock]).creation_flags(CREATE_NO_WINDOW).output();
-        match cmd {
-            Err(e) => {
-                println!("Error: {}", e.to_string());
-                false
-            },
-            Ok(r) => r.status.success(),
-        }
+        self.lock_file_fetch(p).is_some()
     }
 
     fn lock_file_fast(&self, p: &String) {
-        self.lock_file(p);
+        self.lock_file_fetch(p);
     }
 
-    // locks a file, then returns the newly created lock
-    fn lock_file_fetch(&self, p: &String) -> Option<LfsLock> {
-        match self.lock_file(p) {
-            true => self.get_lock_file(p),
-            false => None
-        }
-    }
+    // locks a file, then returns the newly created lock or None if it already exists
+    fn lock_file_fetch(&self, p: &String) -> Option<LfsLock>;
 
     // lock a real file, not an arbitrary path
     fn lock_real_file(&self, p: &String) -> Option<LfsLock> {

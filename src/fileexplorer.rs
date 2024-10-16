@@ -2,7 +2,7 @@ use std::fs;
 use std::fs::DirEntry;
 use lock::lockstore::LockStore;
 
-use crate::lock::{self, lockstore, tag};
+use crate::lock::{self, lockstore};
 
 pub struct FileExplorer {
     selected_files: Vec<std::path::PathBuf>,
@@ -82,10 +82,10 @@ impl FileExplorer {
                         ui.end_row();
                     }
                 }
-                for entry in fs::read_dir(&self.cwd) {
+                if let Ok(entry) = fs::read_dir(&self.cwd) {
                     for e in entry {
                         match e {
-                            Err(_) => println!("Not a real file"),
+                            Err(_) => (),
                             Ok(f) => {
                                 self.render_dir_entry(ui, &f);
                             }

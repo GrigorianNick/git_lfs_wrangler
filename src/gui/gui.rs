@@ -3,21 +3,22 @@ use egui::Separator;
 use std::collections::HashMap;
 use std::vec;
 
-use crate::{fileexplorer, git};
-use crate::lock::tag::Tag;
-use crate::lock::{lockstore, tag, LfsLock};
-use crate::lock::lockstore::LockStore;
+use crate::gui::fileexplorer::FileExplorer;
+use crate::git;
+use crate::lock::LfsLock;
+
+use super::daemon;
 
 type LockSortFunc = dyn FnMut(&LfsLock, &LfsLock) -> std::cmp::Ordering;
 
 pub struct WranglerGui {
     locks: Vec<LfsLock>,
     lock_selection: HashMap<u32, bool>,
-    explorer: fileexplorer::FileExplorer,
-    lock_store: Box<dyn LockStore>,
+    explorer: FileExplorer,
     lock_sort_fn: Box<LockSortFunc>,
     // Backing search texts
     file_search: String,
+    daemon: daemon::Daemon,
 }
 
 impl Default for WranglerGui {
@@ -25,11 +26,10 @@ impl Default for WranglerGui {
         WranglerGui {
             locks: vec![],
             lock_selection: HashMap::<u32, bool>::new(),
-            explorer: fileexplorer::FileExplorer::new(".".into()),
-            //lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
-            lock_store: lockstore::multithreaded_lockstore::MultithreadedLockStore::new(),
+            explorer: FileExplorer::new(".".into()),
             lock_sort_fn: Box::new(file_sort),
             file_search: "".into(),
+            daemon: daemon::spawn(true),
         }
     }
 }
@@ -49,11 +49,16 @@ fn branch_sort(l1: &LfsLock, l2: &LfsLock) -> std::cmp::Ordering {
 fn dir_sort(l1: &LfsLock, l2: &LfsLock) -> std::cmp::Ordering {
     l1.dir.cmp(&l2.dir)
 }
+fn queue_sort(l1: &LfsLock, l2: &LfsLock) -> std::cmp::Ordering {
+    l1.queue.cmp(&l2.queue)
+}
 
 impl WranglerGui {
-    pub fn new(_: &eframe::CreationContext) -> Self {
-        let mut gui = Self::default();
-        gui.refresh_locks();
+    pub fn new(cc: &eframe::CreationContext) -> Self {
+        let gui = Self::default();
+        gui.explorer.set_ctx(cc.egui_ctx.clone());
+        gui.daemon.set_ctx(cc.egui_ctx.clone());
+        gui.daemon.refresh_locks();
         gui
     }
 
@@ -85,7 +90,9 @@ impl WranglerGui {
             self.lock_sort_fn = Box::new(dir_sort);
         }
         ui.add(Separator::default().vertical());
-        ui.label("Queue");
+        if ui.label("Queue").clicked() {
+            self.lock_sort_fn = Box::new(queue_sort);
+        }
         ui.end_row();
     }
 
@@ -136,28 +143,48 @@ impl WranglerGui {
     pub fn release_locks(&self) {
         for (id, selected) in &self.lock_selection {
             if *selected {
-                self.lock_store.unlock_id_fast(*id);
+                self.daemon.unlock_id(*id);
             }
         }
+        self.daemon.update_locks();
+        self.daemon.refresh_locks();
     }
 
     fn refresh_locks<'b>(&'b mut self) {
-        self.lock_selection = HashMap::<u32, bool>::new();
-        self.lock_store.update();
-        self.locks = self.lock_store.get_locks().into_iter().filter(|lock| !git::is_lock_test(lock)).collect();
+        self.update_locks(self.daemon.fetch_locks());
+    }
+
+    fn update_locks(&mut self, new_locks: Vec<LfsLock>) {
+        self.locks = new_locks.into_iter().filter(|lock| !git::is_lock_test(lock)).collect();
+        self.locks.sort_by(|l1, l2| (self.lock_sort_fn)(l1, l2));
+        self.lock_selection.retain(|id, _| self.locks.iter().find(|lock| lock.id == *id).is_some());
         for lock in &self.locks {
-            self.lock_selection.insert(lock.id, false);
+            if !self.lock_selection.contains_key(&lock.id) {
+                self.lock_selection.insert(lock.id, false);
+            }
         }
         self.explorer.refresh_locks();
+    }
+
+    fn clear_selection(&mut self) {
+        for (_, b) in self.lock_selection.iter_mut() {
+            *b = false;
+        }
     }
 }
 
 impl eframe::App for WranglerGui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        match self.daemon.check_locks() {
+            Some(locks) => {
+                self.update_locks(locks)
+            },
+            _ => (),
+        }
         egui::SidePanel::left("file explorer").show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if self.explorer.render(ui) {
-                    self.refresh_locks();
+                    self.daemon.refresh_locks();
                 }
             });
         });
@@ -165,20 +192,20 @@ impl eframe::App for WranglerGui {
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new("Release locks")).clicked() {
                     self.release_locks();
-                    self.refresh_locks();
                 }
                 if ui.button("Enqueue for locks").clicked() {
                     for (id, sel) in &self.lock_selection {
                         if *sel {
                             match self.locks.iter_mut().find(|lock| lock.id == *id) {
-                                Some(mut lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(&lock);
-                                    queue_tag.tag(&mut lock, &*self.lock_store);
+                                Some(lock) => {
+                                    self.daemon.enqueue(lock.id);
                                 },
                                 None => (),
                             }
                         }
                     }
+                    self.clear_selection();
+                    self.daemon.refresh_locks();
                 }
                 if ui.button("Sync locks").clicked() {
                     self.refresh_locks();
@@ -188,19 +215,19 @@ impl eframe::App for WranglerGui {
                         if *sel {
                             match self.locks.iter_mut().find(|lock| lock.id == *id) {
                                 Some(lock) => {
-                                    let queue_tag = tag::queuetag::for_lock(&lock);
-                                    queue_tag.delete(&*self.lock_store);
-                                    lock.queue.retain(|v| *v != git::get_lfs_user());
+                                    self.daemon.dequeue(lock.id);
                                 },
                                 None => (),
                             }
                         }
                     }
+                    self.clear_selection();
+                    self.daemon.refresh_locks();
                 }
             })
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::ScrollArea::both().show(ui, |ui| {
                 ui.set_height_range(100.0..=500.0);
                 egui::Grid::new("lfs lock view").show(ui, |ui| {
                     self.render_lock_headers(ui);

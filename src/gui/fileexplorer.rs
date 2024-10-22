@@ -9,7 +9,6 @@ pub struct FileExplorer {
     cwd: std::path::PathBuf,
     locked_files: Vec<std::path::PathBuf>,
     daemon: Daemon,
-    //lock_store: Box<dyn LockStore>,
 }
 
 impl Default for FileExplorer {

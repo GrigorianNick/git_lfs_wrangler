@@ -24,7 +24,7 @@ fn update_store(tx: Sender<Command>) {
     loop {
         match tx.send(Command::Update) {
             Err(_) => return,
-            Ok(_) => std::thread::sleep(time::Duration::from_secs(60)),
+            Ok(_) => std::thread::sleep(time::Duration::from_secs(300)),
         }
         tx.send(Command::FetchLocks).expect("tx should be valid");
     }

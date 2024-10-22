@@ -1,14 +1,14 @@
 use std::fs;
 use std::fs::DirEntry;
-use lock::lockstore::LockStore;
 
-use crate::lock::{self, lockstore};
+
+use super::daemon::Daemon;
 
 pub struct FileExplorer {
     selected_files: Vec<std::path::PathBuf>,
     cwd: std::path::PathBuf,
     locked_files: Vec<std::path::PathBuf>,
-    lock_store: Box<dyn LockStore>,
+    daemon: Daemon,
 }
 
 impl Default for FileExplorer {
@@ -24,21 +24,18 @@ impl FileExplorer {
             selected_files: vec![],
             cwd: std::path::Path::new(&path).to_path_buf(),
             locked_files: vec![],
-            //lock_store: lockstore::monothread_lockstore::MonothreadLockStore::new(),
-            lock_store: lockstore::multithreaded_lockstore::MultithreadedLockStore::new(),
+            daemon: crate::gui::daemon::spawn(false),
         };
         fs.refresh_locks();
         fs
     }
 
+    pub fn set_ctx(&self, ctx: egui::Context) {
+        self.daemon.set_ctx(ctx);
+    }
+
     pub fn refresh_locks(&mut self) {
-        let locks = self.lock_store.get_locks();
-        let mut lock_paths = vec![];
-        for lock in locks {
-            let fixed_path = [".", &lock.file].join("/");
-            lock_paths.push(std::path::Path::new(&fixed_path).to_path_buf());
-        }
-        self.locked_files = lock_paths;
+        self.daemon.refresh_locks();
     }
 
     fn render_dir_entry(&mut self, ui: &mut egui::Ui, f: &DirEntry) {
@@ -67,6 +64,13 @@ impl FileExplorer {
 
     // true means we did something with locking
     pub fn render(&mut self, ui: &mut egui::Ui) -> bool {
+        match self.daemon.check_locks() {
+            Some(locks) => self.locked_files = locks.into_iter().map(|lock| {
+                let fixed_path = [".", &lock.file].join("/");
+                std::path::Path::new(&fixed_path).to_path_buf()
+            }).collect(),
+            None => (),
+        }
         let mut should_update_locks = false;
         ui.label(&self.cwd.to_string_lossy().to_string());
         ui.separator();
@@ -111,13 +115,11 @@ impl FileExplorer {
         ui.separator();
         if ui.button("Lock files").clicked() {
             for file in &self.selected_files {
-                self.lock_store.lock_real_file(&file.to_string_lossy().to_string());
+                self.daemon.lock_real_file(&file.to_string_lossy().to_string());
             }
+            self.refresh_locks();
             self.selected_files.clear();
             should_update_locks = true;
-        }
-        if should_update_locks {
-            self.refresh_locks();
         }
         should_update_locks
     }

@@ -8,7 +8,7 @@ use crate::lock::lockstore::LockStore;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub fn get_user() -> String {
+fn get_user() -> String {
     let out = Command::new("cmd").args(["/C", "git config --get user.name"]).creation_flags(CREATE_NO_WINDOW).output();
     match out {
         Err(_) => "".to_string(),

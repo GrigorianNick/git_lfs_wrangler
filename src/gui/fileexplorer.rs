@@ -76,15 +76,15 @@ impl FileExplorer {
         ui.separator();
         ui.horizontal(|ui| {
             egui::Grid::new("File Explorer Unselected").show(ui, |ui| {
-                match self.cwd.parent() {
-                    None => (),
-                    Some(parent) => {
+                match (self.cwd.parent(), self.cwd.to_string_lossy() == ".") {
+                    (Some(parent), false) => {
                         ui.label("D");
                         if ui.label("..").clicked() {
                             self.cwd = parent.to_path_buf();
                         }
                         ui.end_row();
-                    }
+                    },
+                    _ => (),
                 }
                 if let Ok(entry) = fs::read_dir(&self.cwd) {
                     for e in entry {
